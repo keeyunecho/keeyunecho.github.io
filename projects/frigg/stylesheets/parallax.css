@@ -1,0 +1,20 @@
+.parallax {
+  padding: 200px 0;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-image: url("../images/sunrise.png");
+}
+
+.parallax h1 {
+  text-align: center;
+  font-family: 'Amatic SC', cursive;
+  font-size: 150px;
+  padding-top: 120px;
+}
+
+.parallax p {
+  text-align: center;
+  font-family: 'Amatic SC', cursive;
+  font-size: 30px;
+  margin-top: -20px;
+}

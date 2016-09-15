@@ -1,0 +1,206 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Frigg</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="stylesheets/184.css">
+    <link rel="stylesheet" type="text/css" href="stylesheets/parallax.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Amatic+SC:400,700' rel='stylesheet' type='text/css'>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body>
+
+<section class="module parallax parallax-1">
+  <div>
+    <h1>Frigg: Cloud Painter</h1>
+    <p><a href="http://inst.eecs.berkeley.edu/~cs184-em/cloudpainter/frigg.html">Live Demo</p>
+  </div>
+</section>
+
+
+<div class="content">
+<h2>Navigation</h2>
+    <ol id="toc">
+        <li> <a href="#part1">Abstract</a></li>
+        <br>
+        <li> <a href="#part2">Technical Approach</a></li>
+            <ol>
+                <li> <a href="#part2a">User Interface</a></li>
+                <li> <a href="#part2b">Shaders</a></li>
+            </ol>
+        <li> <a href="#part3">Challenges & Lessons Learned</a></li>
+        <li> <a href="#part4">Results</a></li>
+        <li> <a href="#part5">References</a></li>
+    </ol>
+
+<a id="part1"></a>
+<h2>Overview</h2>
+  <div class="container">
+    <p>My first attempt at a cloud painter was during the winter break of my freshman year. Produced using only basic Javascript, the clouds drawn using that web application were unrealistic, to say the least. Therefore I wanted to remake my original vision, this time armed with what I had learned so far at college.</p> The form and lighting of realistic clouds were the technically captivating intriguing parts of this project. Clouds have varying densities across their volume and also scatter light from within. True-to-physics renderings are very complicated but not impossible to achieve. I did want to aim for a more painterly effect, however, with enhanced colors and more intense lighting. In addition to visual appeal, realtime performance and accessibility are the key components of the user experience I aimed to achieve. This neccesitated the use of WebGL shaders and a fully functional user interface for dragging, dropping and customizing clouds.</p>
+  </div>
+
+<a id="part2"></a>
+<a id="part2a"></a>
+<h2>Technical Approach: UI</h2>
+    <p>There are 3 (and 1/2) modes in Frigg: Create mode, Select mode, View mode, and the option to orbit the camera. Cloud generation and customization had to be fast, responsive and intuitive, so the Create and Select modes represent clouds as draggable cubes. This requires transformations first from window to NDC space, then from NDC to camera space.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/window.png"/>
+            <figcaption>Window Space<code>(Fig. 2.1)</code></figcaption>
+        </div>
+        <div class="images">
+            <img src="images/ndc.png"/>
+            <figcaption>NDC Space<code>(Fig. 2.2)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <p>Given a 2D vector that represents a point in window space, it is easy to take that point into NDC space by normalizing the x and y values with the window width and height, respectively, and then shifting the range from [0, 1] to [-1, 1]. The exact z value, which the user can control using the "scene" setting in the menu, is unimportant at this point; it only needs to be consistent so the mapped point is always directly underneath the cursor. The NDC coordinates are then projected into camera space, using the transformation matrix that is a product of the camera's projection matrix and the inverse of the camera's position matrix.</p>
+
+    <p>In Create Mode, each left click of the mouse places a cloud box with single pixel dimensions into the world. By then dragging the mouse, the user can manipulate the width and height of the box. The dimension along the z-axis is determined by the "depth" setting in the menu. Each box is part of an umbrella cloud <code>Generator</code>. New generators can be started by pressing the "s" key. In Select Mode, a click casts a ray from the camera in the normalized direction of the click. If an intersection is found, either a single cloud box or the entire cloud generator can be dragged and moved.</p>
+
+    <p>Although boxes are good for easily customizing dimensions and fast intersection calculations, they are not ideal for rendering realistic cloud shapes. Hence when clouds are added to the scene rendered using custom shaders, they are transformed into ellipsoids. Three.js only has sphere geometry, but that can easily be scaled into an ellipsoid with dimensions corresponding to the original box shape.</p>
+
+    <div class="imageWrapper">
+        <div class="images widen">
+            <img class="lower" src="images/scaleMatrix.gif"/>
+            <figcaption>Scaling Matrix<code>(Fig. 2.3)</code></figcaption>
+        </div>
+        <div class="images">
+            <img src="images/ellipsoid.png"/>
+            <figcaption>Ellipsoid Geometry<code>(Fig. 2.4)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+<a id="part2b"></a>
+<h2>Technical Approach: Shaders</h2>
+    <p>The main two visual aspects of Frigg are the sky and clouds. Vertex shaders for both are basic, setting <code>gl_Position</code> and only passing along <code>position</code>, the coordinates of the vertex in object space, as a varying variable. Fragement shaders are the interesting parts.</p>
+
+    <p>The sky is actually a skydome, rendered onto the scene as a skydome with a separate camera, so that clouds can be rotated without affecting the sun and sky. The sky fragement shader casts a ray from a pseudo-camera near the center of the screen to the pixel's NDC coordinates. The dot product of that ray's direction and the sunlight's direction, the latter being passed to the shader as a uniform variable, determines light intensity at that pixel. The red and green channels of the sky's base color are increased by some factor of light intensity so that pixels closer to the sun are more white/yellow. </p>
+
+    <p>In order to draw realistic volumetric clouds that stood up to being rotated, raymarching has to be used. Unlike the raytracing we implemented in Assignement 3, raymarching does not utilize clearcut intersection points. Starting from the ray's origin, set in the cloud fragment shader as the camera's position, the program "marches" along the ray and accumulates light. Marching usually continues until the surface of the volume is reached (<code>p4</code> in the figure below). In this shader, however, the distance a ray can be traveled is also limited by a maximum alpha value that can be accumulated.</p>
+    <br>
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/raymarching.jpg"/>
+            <figcaption>Raymarching (<a href="http://http.developer.nvidia.com/GPUGems2/gpugems2_chapter08.html">source</a>) <code>(Fig. 2.5)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+    <p>The calculations involved in accumulating light depend on the sunlight's direction and also a varying density value. Density is taken from a noise function. I chose to use value noise over gradient noise (Perlin noise is often used to render clouds) since speed was important. Using the fractional Brownian motion technique <sup>[1]</sup>, which samples and adds together noise at different frequencies and amplitudes, produces the finer detail needed for wispy clouds but also maintains a look of cohesion between cloud regions. The figure below shows what the accumulated density values for a cloud look like.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/fbm.png"/>
+            <figcaption>fBm Noise<code>(Fig. 2.6)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+    <p>The brightness of a point is linear to its density (intuitively, the less dense a cloud is the more light is let through). More intense highlights are created by calculating the density in the sun's direction. If that value is very low, light is multiplied to increase the cloud's glow.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/light_intensity.png"/>
+            <figcaption><code>(Fig. 2.7)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+    <p>While cloud rendering has been a subject for decades, most efforts were aimed towards creating wide and highly populated cloudscapes, which were ideal for flying simulation games, among other uses <sup>[2]</sup>. In order to draw singular clouds or groups of clouds, I implemented a transparency fall off function to fade the cloud arounds its edges. Since basing the alpha value only on the point's distance from the center of the cloud would result in shapes that were too perfect, noise is also introduced into the calculations. This allows clouds to be correctly blended into the sky or other clouds, as seen in <code>Fig. 2.9</code>, which are the clouds rendered by the cloud boxes in <code>Fig. 2.8</code></p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/boxes.png"/>
+            <figcaption><code>(Fig. 2.8)</code></figcaption>
+        </div>
+        <div class="images">
+            <img src="images/blend.png"/>
+            <figcaption><code>(Fig. 2.9)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+<a id="part3"></a>
+<h2>Technical Approach: Challenges & Lessons Learned</h2>
+    <p>Although proportionally more time should have been spent on the shaders, the nature of this project meant the user interface had to be functional before shaders could be tested. While not conceptually difficult, Javascript is messy to code with and the code to project points between coordinate spaces was originally quite buggy. Dividing functions between files and abstracting away the calculations were key in getting the UI in order.</p>
+    <p>Shading the clouds was definitely the more interesting but also more complex part of this project. Tweaking parameters to look right, from how to integrate light to bounding how far rays were marched along, was difficult. A bug that haunted me for a couple of days straight was how to properly blend individual clouds into their surroundings. I ended up turning off the automatic z-buffer sorting that the Three.js renderer used and clearing the buffer between renders manually, so that clouds were correctly drawn back to front, which is less optimal because pixels will be colored over but neccessary in order to avoid the bug below, where the sky is drawn over clouds further back.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/bug.png"/>
+            <figcaption><code>(Fig. 2.10)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+    <p>Three.js and WebGL are powerful tools, and I learned a lot about how to utilize them over the course of this project. I also learned about the various types of noise and how to blend them in order to create the sort of distribution I need. Cloud rendering is a visually interesting concept that has been tackeled in many approaches, from complete volumetric rendering to hacks that involve several 2D planes, textures or sprites. My approach was a compromise between visual appeal and speed, and it was interesting to learn how even industry level computer graphics have to make that same compromise.</p>
+
+<a id="part4"></a>
+<h2>Results</h2>
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/high_density.png"/>
+            <figcaption><code>(Fig. 3.1)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/daylight.png"/>
+            <figcaption><code>(Fig. 3.2)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/light_intensity.png"/>
+            <figcaption><code>(Fig. 3.3)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+<a id="part5"></a>
+<h2>References</h2>
+<p>[1] <a href="http://onlinelibrary.wiley.com/store/10.1029/97WR01982/asset/wrcr7603.pdf;jsessionid=C1917D0E92E4B113B024320DFD77BA91.f02t01?v=1&t=invegocp&s=6c395f1ca567284e52869425c80a522b73a494d2">Fractional Brownian motion and fractional Gaussian noise in subsurface hydrology, by F. J. Molz, H. H. Liu and J. Szulga</a>
+<p>[2] <a href="http://ofb.net/~niniane/clouds-jgt.pdf">Realistic and Fast Cloud Rendering, by Niniane Wang</a></p>
+<p>[3] <a href="https://engineering.purdue.edu/purpl/level2/papers/ebert98implicit.pdf">Implicit Modeling with Procedural Techniques, by David S. Ebert</a></p>
+
+</div>
+
+
+<script>
+    (function(){
+        var offset = 250;
+        var parallax = document.querySelectorAll(".parallax"),
+            speed = 0.5;
+
+        window.onscroll = function(){
+            [].slice.call(parallax).forEach(function(el,i){
+                var windowYOffset = window.pageYOffset,
+                    elBackgrounPos = "50% " + (windowYOffset * speed) + "px";
+                el.style.backgroundPosition = elBackgrounPos;
+            });
+        };
+            
+        $('.scrollTo').click(function(event) {
+            event.preventDefault();
+            var anchor = $("a[id='"+ $(this).attr('href') +"']");
+            $('html, body').animate({scrollTop: anchor.offset().top},'slow');
+            return false;
+        })
+    })();
+
+</script>
+</script>
+</body>
+</html>
+
+
+
+

@@ -1,0 +1,782 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Pathtracer</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/184.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <div class="info">
+        <h1>Project 3: Path Tracer</h1>
+        <br>
+        <p>Path Tracer in C++</p>
+        <p>March 2016</p>
+    </div>
+</div>
+<div class="content">
+    <h2>Navigation</h2>
+        <ol id="toc">
+            <li> <a class="scrollTo" href="part1">Ray Generation</a></li>
+            <li> <a class="scrollTo" href="part2">Scene Intersection</a></li>
+            <li> <a class="scrollTo" href="part3">Bounding Volume Hierarchy</a></li>
+            <li> <a class="scrollTo" href="part4">Direct Illumination</a></li>
+            <li> <a class="scrollTo" href="part5">Indirect Illumination</a></li>
+            <li> <a class="scrollTo" href="part6">Materials</a></li>
+        </ol>
+
+    <h2>Introduction: Pipeline</h2>
+        <p> PathTracer is a physically-based renderer with core functionality (ray tracing, acceleration structures, parallelization, various materials) and a basic GUI. When the program <code>pathtracer</code> is invoked: </p>
+        <ol>
+            <li><p>The <code>main()</code> function inside main.cpp parses the scene file using a <code>ColladaParser</code> from <em>collada/collada.h</em>.</p></li>
+            <li><p>A new <code>Viewer</code> and <code>Application</code> are created. <code>Viewer</code> manages the low-level OpenGL details of opening the window, and it passes most user input into <code>Application</code>. <code>Application</code> owns and sets up its own <code>pathtracer</code> with a camera and scene.</p></li>
+            <li><p>An infinite loop is started with <code>viewer.start()</code>. The GUI waits for various inputs, the most important of which launch calls to <code>set_up_pathtracer()</code> and <code>PathTracer::start_raytracing()</code>.</p></li>
+            <li><p><code>set_up_pathtracer()</code> sets up the camera and the scene, notably resulting in a call to <code>PathTracer::build_accel()</code> to set up the BVH.</p></li>
+            <li><p>Inside <code>start_raytracing()</code> (implemented in <em>pathtracer.cpp</em>), the scene is divided into "tiles," which are put into a work queue that is processed by <code>numWorkerThreads</code> threads.</p></li>
+            <li><p>Until the queue is empty, each thread pulls tiles off the queue and runs <code>raytrace_tile()</code> to render them. <code>raytrace_tile()</code> calls <code>raytrace_pixel()</code> for each pixel inside its extent. The results are dumped into the pathtracer's <code>sampleBuffer</code>, an instance of an <code>HDRImageBuffer</code> (defined in <em>image.h</em>).</p></li>
+        </ol>
+    
+    <a id="part1"></a>
+    <h2>Part 1: Ray Generation</h2>
+        <p>At its highest level of abstraction the core rendering loop is located in <code>raytrace_pixel()</code>, where <code>num_samples</code> camera rays are generated according to a sampling scheme and traced. The function returns the average color of the samples, represented as a <code>Spectrum</code> object.
+
+        <p>Jagged edges in the rendered image can be decreased through the brute force method of increasing the number of samples (defined as <code>num_samples</code>) per pixel, i.e. anti-aliasing through super-sampling. However, this is very expensive. The time it takes to render increases linearly with the number of samples.</p>
+
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/sampling_schemes/sample_rate_graph.png"/>
+                <figcaption><code>(Fig. 1.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+
+        <p>The goal, then, is to use the smallest number of samples possible for a satisfactory render. In a good sampling scheme, (1) samples are uniformly distributed over the unit square to reduce clumping and gaps; (2) projections of the sample onto the x and y dimensions are also uniformly distributed; (3) some minimum distance is maintained between sample points; and (4) samples are not regularly spaced, as that leads to aliasing artifacts like moiré patterns.</p>
+        
+        <p>There were 3 different sampling schemes implemented in PathTracer.
+        <ul>
+            <li><p><strong>Random Sampling</strong>: The outcome of a random variable uniformly distributed over [0, 1] is added to the origin. While simple, this introduced a lot of noise and can easily result in clumping.</p></li>
+            <li><p><strong>Jittered Sampling</strong>: Each pixel is divided into an <em>n &middot; n </em> grid, where <em>n = sqrt(</em><code>num_samples</code><em>)</em> and a random point is sampled from each of the cells. This alleviates clumping but does not help with uniformly distributed 1D projections.</p></li>
+            <li><p><strong>n-Rooks Sampling</strong>: (not implemented but included for sake of explanation) <em>n</em> samples are placed in an <em>n &middot; n </em> grid such that there is exactly one sample in each column and row. This is achieved by generating samples along the main diagonal of the grid and then randomly shuffling the x and y coordinates (separately) while maintaing the n-Rooks condition. The standard for 1D projections is thus met, but 2D projections are no better than that of random sampling.</p></li>
+            <li><p><strong>Multi-Jittered Sampling</strong>: Combines jittered and n-Rooks sampling. The cells of the <em> n &middot; n </em> grid is further divided into another <em> n &middot; n </em>. One sample is placed in each cell of the upper level grid while maintaing the n-Rooks condition of the lower-level grid. The samples are then randomly shuffled, making sure to keep meeting both the jittered and n-Rooks conditions.</p></li>
+        </ul>
+        <p>While all the schemes take essentially the same amount of time to render, multi-jittered sampling is the most effective. The increased softness of the diffuse lighting is quite discernible with multi-jittered sampling, especially in the shadows under sphere, corners of ceiling, and top edge of image. The jaggedness of the ceiling light lines is also alleviated with better sampling.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/sampling_schemes/resize/multi_16_8_6.png"/>
+                <figcaption><code>Multi-Jittered, 16 samples/pixel (Fig. 1.2)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The coordinates of each sampled point are normalized and passed to <code>Camera::generate_ray()</code> in <em>camera.cpp</em>, which maps the position of the input to its position on the canonical sensor plane one unit away from the pinhole. Since this gives the ray's direction in the camera's coordinate space, we apply a camera-to-world matrix to the vector and use the result to create a ray defined an origin (the camera's position) and a direction. We also clip the ray's minimum and maximum <code>t</code> values by the camera's near and far parameters.</p>
+    
+    <a id="part2"></a>
+    <h2>Part 2: Scene Intersection</h2>
+        <p><code>Pathtracer::trace_ray()</code> then tests if and where each ray intersects primitives in the scene (an efficient way of looping through primitives is detailed in <a class="scrollTo" href="part2">Part 2</a>). The Möller-Trumbore algorithm is the benchmark for fast ray/triangle intersection tests. It utilizes that a point <em>P</em> in relation to a triangle can be described by the triangle's vertices linearly interpolated by three variables (called barycentric coordinates). In mathematic notation: </p>
+        <p><center><em>P = wA + uB + vC</em></center></p>
+
+        <p> We can also write the intersection <em>P</em> using the ray's parametric equation, where <em>O</em> is the origin, <em>t</em> is the magnitude, and <em>D</em> is the direction, to get:</p>
+        <p><center><em>P = O + tD</em></center></p>
+
+        <p>Since <em>w = 1 - u - v</em>, the above equations can be combined and rewritten as:</p>
+        <p><center><em>O - A = -tD + u(B - A) + v(C - A)</em></center></p>
+
+        <p>After more arithmetic manipulation involving Cramer's Rule, and denoting <em>T = O − A, E<sub>1</sub> = B − A</em>, and <em>E<sub>2</sub>= C − A</em> for brevity, we arrive at the neatly arranged expression:</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/mt_alg.png"/>
+                <figcaption><code>(Fig. 1.7)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+
+        <p><code>Triangle::intersect()</code> computes <em>u</em> and then <em>v</em>, terminating early with a false return value if either of the two coordinates are &lt; 0 or if their sum is &gt; 1, as failing those conditions would mean they are not valid barycentric coordinates for a point inside the triangle. The function then checks that <em>t</em> is within the bounds defined by the ray's minimum and maximum <code>t</code>, and if so, updates <code>max_t</code> to be <em>t</em> and also correctly saves information to the input <code>Intersection</code>.</p>
+
+        <p>One of the attributes of a valid <code>Intersection</code> is the normal, calculated by barycentric interpolation of the triangle's vertex normals. Below are examples of images rendered with normal shading.</p>
+
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/resize/normal_spheres.png"/>
+                <figcaption><code>(Fig. 1.8)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/resize/normal_dragon.png"/>
+                <figcaption><code>(Fig. 1.9)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/resize/normal_lucy.png"/>
+                <figcaption><code>(Fig. 1.10)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part3"></a>
+    <h2>Part 3: Bounding Volume Hierarchy</h2>
+        <p>The naive way to test how rays intersect with the primitives in a scene is to simply loop through all the primitives. This is, put simply, way too slow. Implementing an acceleration structure can reduce the rendering of even very large files by several orders of magnitude, down to a couple of seconds.</p>
+
+        <h3>Box Intersection </h3>
+        <p>Starting small: The number of times we have to test whether a ray intersects a complex object can be greatly reduced by bounding the object in a simpler volume, i.e. a box, and only testing the object if the ray intersects the box. A quick way to test ray/axis-aligned bounding box (AABB) intersections is the slab method <a href="https://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm">(1)</a>. The idea is to treat the box as the space inside of 3 pairs of parallel planes. If the intersection of the ray with the nearest slab is smaller than that with the farthest slab, then the ray hits the box. More intuitively: each pair of planes trims off ends of the ray, so if any portion of the ray remains, it was a hit! </p>
+
+        <p>For example, the code to check the intersection of a ray <em> r = o + td </em> on the x-axis could be:</p>
+        <pre class="prettyprint">
+        
+        // Divisions are expensive, so we precompute the vector 1 / d once 
+        // as the ray is generated and multiply by that value instead of dividing.
+
+        BBox::intersect(const Ray& r, double& t0, double& t1) {
+            double xNear = (min.x - r.o.x) * r.inv_d.x;
+            double xFar = (max.x - r.o.x) * r.inv_d.x;
+
+            double tMin = min(xNear, xFar);
+            double tMax = max(xNear, xFar);
+
+            ...
+        }
+        </pre>
+        <br>
+        <h3>Bounding Volume Heirarchy (BVH) Construction</h3>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/bvh.png"/>
+                <figcaption><code>(Fig. 2.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>A BVH parititions objects into disjoint subsets and organizes boxes into a tree-structure. Starting with a root node that encompasses all the bounding boxes, we divide primitives into a left and right bounding box. The improvement in rendering time when comparing a naive approach (put all primitives into a single bounding box, meaning we loop through every primitive for each ray) and a BVH approach is massive. The below points were computed with 1 sample/pixel.</p>
+
+         <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/bvh_graph.png"/>
+                <figcaption><code>(Fig. 2.2)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        
+        <p>An intuitive (if slightly inefficient) way to construct a BVH structure is through a recursive function <code>BVHAccel::construct_bvh(vector&lt;Primitive*&gt; &prims</code>)</code> that returns a <code>BVHNode*</code>. This function will: </p> 
+        <ul>
+            <li><p>Initilize a new <code>BVHNode bnode</code> with a bounding box containing all the input primitives.</p></li>
+            <li><p>If there are &le; <code>max_leaf_size</code> input primitives, then this is a leaf bnode. Allocate a new <code>vector&lt;Primitive*&gt;</code> for <code>bnode</code>'s primitives</p></li>
+            <li><p>If this is not a leaf, then split the primitives into a left and right vector and recurse on each vector, assigning the returned pointers to <code>bnode</code>'s left and right children, respectively.</p></li>
+            <li><p>Return <code>bnode</code>.</p></li>
+        </ul>
+
+        <p>It is important to note that all memory for objects used in the BVH, both in recursive construction and in stack construction (detailed below) must be allocated on the heap. Not doing so will result in segmentation fault errors, since once <code>BVHAccel::construct_bvh()</code> completes, the pointers to primitve vectors and child nodes allocated on the stack will point to garbage.</p>
+
+        <p><strong>Spatial vs Object Splits:</strong></p>
+        <p>One possible split point is the midpoint of the bounding box's widest spanning axis, with one change. By constructing a bounding box containing the primitives's centroids and utilizing that instead of the all-area encompassing bounding box, the division of primitives is much more balanced (and can lead to a &gt; 2.5 times reduction in the number of intersection tests performed). Splitting is stopped when the number of primitives goes below a threshold amount; in this implementation the maximum size of a leaf node is 4 primitives.</p>
+
+        <p>Ideally, splitting is continued until it would cost more to traverse both a node's left and right children than to traverse the node itself. The cost of traversing a node can be represented as:</p>
+        <p><center>Cost(Node) = Pr(Hit Node) &middot; Cost(Traverse Node)</center></p>
+        where the probability of hitting a node is approximated by surface area of all its primitives and the cost of traversing is equated to the number of primitives.</em>
+        <p>So while a BVH is by definition an object partition, spatial partitioning, like implemented in a kd-tree, is advantageous. BVH's, however, are easier to construct, have less nodes, work well with packet tracing techniques, and have been found to outperform kd-trees on GPU architectures <a href="http://www.nvidia.com/docs/IO/77714/sbvh.pdf">(2)</a>. To utilize the strengths of both approaches, a BVH built using the surface area heuristic (SAH) is a widely used alternative to kd-trees in the computer graphics industry today. The approximate construction techniques developed for kd-trees arguably work even better for BVH trees <a href="http://www.sci.utah.edu/~wald/Publications/2007/ParallelBVHBuild/fastbuild.pdf">(3)</a>.</p>
+
+        <p>An efficient modern SAH approximation is to split the spatial extent of primitives into <em>b</em> buckets. This number is usually small, here we use 8. For each bin, primitives are looped through and added to the left or right bounding box according to the position of their centroid relative to the bin boundary. The cost of partioning the node is thus calculated as:</p>
+        <p><center>Cost(Node) = Cost_traverse + Cost(L) + Cost(R)</center></p>
+        <p>Substitue in the first equation to get a solid approximation of the cost of splitting the node further. If the cost of traversing the node's children is greater than the cost of traversing itself, then the current node will be saved as a leaf node. The additional runtime cost of the SAH is linear (not bad). It is the sacrifice made for a thereotically faster rendering time.</p>
+        <br>
+        <p><strong>Optimization</strong></p>
+        <p>A more efficient BVH construction is done through use of a <code>stack</code> instead of recursion and compresses all the <code>Primitive</code> pointers into one large vector, with <code>BVHNode</code> leaves only keeping pointers to the start and end of small contiguous chunks of this vector instead of pointing to its own separate vector. It also flattens the BVH, further increasing memory use efficiency. To help with this, a <code>BVHBuildEntry</code> struct is used to keep track of a <code>BVHNode</code>'s' parent node index, its primitives list's start and end points, and how many times it's been visited during stack traversal. In this version, we start with a <code>stack&lt;BVHBuildEntry&gt; todo</code> and <code>vector&lt;BVHNode&gt; buildnodes</code>.</p>
+        <ol>
+            <li><p>Push the root <code>BVHBuildEntry</code>, with <code>start=0</code> and <code>end=prims.size()</code> onto the stack.</p></li>
+            <li><p>While the stack is not empty, pop off the top entry, calculate the bounding box for all the primitives in the input list indicated by the entry's <code>start</code> and <code>end</code> values, and add a <code>BVHNode</code> with the corresponding attributes to a vector.</p></li>
+            <li><p>If the current entry is not the root, then increment the entry's parent's <code>visited</code> value. If <code>visited == 2</code>, that means this entry is its parent's right node, so we can update the parent's right child offset accordingly.</p></li>
+            <li><p>If the entry is a leaf, we're done with it and can <code>continue</code> the loop.</p></li>
+            <li><p>Else, partition the primitives in place according to the chosen split point, keeping track of the mid point.</p></li>
+            <li><p>Push the right <code>BVHBuildEntry</code>, with <code>start=mid</code> and <code>end=curr_entry.end</code>  and the left <code>BVHBuildEntry</code>, with <code>start=curr_entry.start </code> and <code>end=mid</code> onto the stack.</p></li>
+            <li><p>Loop.</p></li>
+        </ol>
+        <p>The following table details the performance of various BVH implementations. Each rendering was done with 8 threads and normal shading on the instructional computers in Soda. Note that the "flat" BVH constructed by a stack should in theory be faster than the recursive version, but the compiler optimizes for tail recursion so speeds are similar. Also, the SBVH structures take longer to construct across the board, as expected, but seem to show only slight improvements in rendering efficiency. SBVH's should perform better with non-uniformly tesselated scenes, and that advantage manifests as expected when rendering Peter, the blob, and Wall-E. Performance improvements overall, however, do not outweigh the increased cost to construct a SVBH, since PathTracer only renders static scenes.</p>
+        <table id="bvhTable">
+            <tr>
+                <th></th>
+                <th></th>
+                <th colspan="3">Naive</th>
+                <th colspan="3">Recursive, midpoint split</th>
+                <th colspan="3">Stack, midpoint split</th>
+                <th colspan="3">Stack, SAH</th>
+            </tr>
+            <tr>
+                <td>File</td>
+                <td>Num. of primitives</td>
+                <td>Avg. intersection tests/ray</td>
+                <td>BVH build time (s)<br></td>
+                <td>Render time (s)<br></td>
+                <td>Avg. intersection tests/ray<br></td>
+                <td>BVH build time (s)</td>
+                <td>Render time (s)<br></td>
+                <td>Avg. intersection tests/ray<br></td>
+                <td>BVH build time (s)<br></td>
+                <td>Render time (s)</td>
+                <td>Avg. intersection tests/ray</td>
+                <td>BVH build time (s)</td>
+                <td>Render time (s)</td>
+            </tr>
+            <tr>
+                <td>CBsphere</td>
+                <td>14</td>
+                <td>7.483184</td>
+                <td>0.0000</td>
+                <td>0.0762</td>
+                <td>6.085383</td>
+                <td>0.0000</td>
+                <td>0.0500</td>
+                <td>5.707232</td>
+                <td>0.0000</td>
+                <td>0.0572</td>
+                <td>5.622947</td>
+                <td>0.0001</td>
+                <td>0.0565</td>
+            </tr>
+            <tr>
+                <td>CBgems</td>
+                <td>252</td>
+                <td>109.578133</td>
+                <td>0.0000</td>
+                <td>0.9670</td>
+                <td>8.691205</td>
+                <td>0.0039</td>
+                <td>0.0816</td>
+                <td>8.657351</td>
+                <td>0.0008</td>
+                <td>0.0862</td>
+                <td>8.075090</td>
+                <td>0.0052</td>
+                <td>0.0779</td>
+            </tr>
+            <tr>
+                <td>teapot</td>
+                <td>2464</td>
+                <td>1064.597848</td>
+                <td>0.0004</td>
+                <td>9.4883</td>
+                <td>14.522926</td>
+                <td>0.0109</td>
+                <td>0.1368</td>
+                <td>15.355993</td>
+                <td>0.0091</td>
+                <td>0.1507</td>
+                <td>14.075288</td>
+                <td>0.0389<br></td>
+                <td>0.1383</td>
+            </tr>
+            <tr>
+                <td>cow</td>
+                <td>5856</td>
+                <td>2525.553164</td>
+                <td>0.0009</td>
+                <td>22.0865</td>
+                <td>14.760254</td>
+                <td>0.0289</td>
+                <td>0.1430</td>
+                <td>14.636856</td>
+                <td>0.0242</td>
+                <td>0.1438</td>
+                <td>14.066516</td>
+                <td>0.1063</td>
+                <td>0.1408</td>
+            </tr>
+            <tr>
+                <td>beetle</td>
+                <td>7558</td>
+                <td>3300.576698</td>
+                <td>0.0012</td>
+                <td>29.9772</td>
+                <td>12.512805</td>
+                <td>0.0366</td>
+                <td>0.1174</td>
+                <td>12.293156</td>
+                <td>0.0307</td>
+                <td>0.1172</td>
+                <td>11.803756</td>
+                <td>0.1380</td>
+                <td>0.1102</td>
+            </tr>
+            <tr>
+                <td>CBbunny</td>
+                <td>28588</td>
+                <td>13951.477094</td>
+                <td>0.0069</td>
+                <td>112.0417</td>
+                <td>9.163355</td>
+                <td>0.1858</td>
+                <td>0.0863</td>
+                <td>9.188975</td>
+                <td>0.1595</td>
+                <td>0.0878</td>
+                <td>9.827149</td>
+                <td>0.7393</td>
+                <td>0.0947</td>
+            </tr>
+            <tr>
+                <td>peter</td>
+                <td>40018</td>
+                <td>47746.860265</td>
+                <td>0.0072</td>
+                <td>159.7699</td>
+                <td>21.048112</td>
+                <td>0.2570</td>
+                <td>0.2070</td>
+                <td>20.827803</td>
+                <td>0.2181</td>
+                <td>0.2008</td>
+                <td>19.387085</td>
+                <td>0.9646</td>
+                <td>0.1968</td>
+            </tr>
+            <tr>
+                <td>CBdragon</td>
+                <td>100012</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>9.875706</td>
+                <td>0.9080</td>
+                <td>0.0937</td>
+                <td>9.140151</td>
+                <td>0.7834</td>
+                <td>0.0917</td>
+                <td>9.498688</td>
+                <td>3.1679</td>
+                <td>0.0917</td>
+            </tr>
+            <tr>
+                <td>blob</td>
+                <td>196608</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>28.119133</td>
+                <td>1.4570</td>
+                <td>0.2780</td>
+                <td>28.626908</td>
+                <td>1.2689</td>
+                <td>0.2811</td>
+                <td>27.031107</td>
+                <td>5.7258</td>
+                <td>0.2706</td>
+            </tr>
+            <tr>
+                <td>wall-e</td>
+                <td>240326</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>x</td>
+                <td>20.770095</td>
+                <td>1.7357</td>
+                <td>0.2068</td>
+                <td>19.346716</td>
+                <td>7.5054</td>
+                <td>0.1885</td>
+            </tr>
+        </table>
+        <br>
+        <h3>BVH Traversal</h3>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/bvh_traversal.png"/>
+                <figcaption><code>(Fig. 2.3)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>A recursive, depth-first traversal of the BVH structure is simple enough. </p>
+        <ol>
+            <li><p>If the given <code>Ray</code> ray does not intersect the given <code>BVHNode</code> node, return false.</p></li>
+            <li><p>Else, if the node is a leaf, test the ray for intersections by looping through the node's primitives.</p>
+                <ul>
+                    <li><p>When testing a light ray we need to loop through all the primitives in order to find the smallest <code>t</code> value before returning true.</p></li>
+                    <li><p>When testing a shadow ray we only need to know if the ray intersects any primitive or not, so we can return true as soon as a hit is found.</p></li>
+                </ul>
+            </li>
+            <li><p>Else, call the function recursively, twice, with the node's left child and its right child. Return whether either of those functions evaluated to true.</p></li>
+        </ol>
+        <p>Without an acceleration structure it takes far too long to render scenes with large numbers of primitives, such as the blob (196,608 primitives) and Wall-E (240,326 primitives), as seen in the table above.</p>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p2/blob.png"/>
+                <figcaption><code>(Fig. 2.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/walle.png"/>
+                <figcaption><code>(Fig. 2.5)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part4"></a>
+    <h2>Part 4: Direct Illumination</h2>
+        <p>Next in <code>PathTracer::trace_ray</code> is computing the direct lighting at a point after a ray hit. Although the ray's direction is in world coordinates, we will calculate a local coordinate space where the normal to the surface points "up" in the <em>z</em> direction and work in that basis. To find direct illumination: </p>
+        <ol>
+            <li><p>Loop through all the lights in the scene. If it is a delta light we only need to take a single sample (since all samples would be the same); if not then take <code>ns_area_light</code> samples.</p></li>
+            <li><p>Call <code>SceneLight::sample_L()</code>, which will return the incoming radiance and also calculate: </p>
+                <ul>
+                    <li><p>a probabilistically sampled <code>w_in</code> vector from the hit point to the light source</p></li>
+                    <li><p>the distance from the hit point to the light source</p></li>
+                    <li><p>a pdf float giving the probability density function evaluated at the returned wi direction</p></li>
+                </ul>
+            </li>
+            <li><p>Check if the shadow ray (a ray sent the same direction as w_in and originating at hit point + some epsilon value to avoid "surface acne," i.e. false positives due to floating point imprecision) intersects any primitive before it hits the light source. If it does, then we don't accumulate any illumination from this light.</p></li>
+            <li><p>Else, calculate the BSDF value of the surface at the angle of incidence. Accumulate the (BSDF &middot; radiance &middot; cosine of the angle between the normal and <code>w_out</code>) divided by the pdf float into a <code>Spectrum L_out</code>.</p></li>
+            <li><p>Return <code>L_out</code> divided by the number of samples.</p></li>
+        </ol>
+        <h3>Area Light Sampling</h3>
+        <p>Random sampling introduces noise, but more samples can reduce noise by, essentially, applying a low-pass moving average filter to high frequencies. The bunny model below has a Lambertian material, meaning shadows are very soft and diffuse. With only 1 sample per light, fast but soft transitions in color, such as the bunny's shadow, appear very noisy. Increasing the number of samples allows the spectrums to average out and the shadows to smooth. Sharp shadows, on the other hand, like along the bunny's underside, do not benefit as much from increased samples per light.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p3/bunny_4_1.png"/>
+                <figcaption>4 samples/pixel, 1 sample/light <code>(Fig. 3.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p3/bunny_4_4.png"/>
+                <figcaption>4 samples/pixel, 4 samples/light <code>(Fig. 3.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p3/bunny_4_16.png"/>
+                <figcaption>4 samples/pixel, 16 samples/light <code>(Fig. 3.3)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <h3>Images rendered with direct illumination only:</h3>
+        <p>Even with only direct lighting and ambient occlusion considered, it is possible to render fairly realistic (if a bit dark) scenes with Lambertian materials.</p>
+        <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p3/dragon_64_32.png"/>
+                <figcaption>sky/dragon <code>(Fig. 3.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p3/wall-e_64_32.png"/>
+                <figcaption>sky/wall-e <code>(Fig. 3.5)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part5"></a>
+    <h2>Part 5: Indirect Illumination</h2>
+        <p>Indirect lighting is also calculated in the local coordinate space where the surface normal points up the z-axis We thus start similarly to when calcularing direct illumination, with a ray and its closest intersection, but instead of looping through lights we directly sample the surface's BSDF.</p>
+
+        <p>Russian roulette based on the sampled BSDF's reflectance is then used to determine whether to randomly terminate the ray or keep tracing it. The less light is reflected at the hit point, the less important the remaining contribution of that ray probably is. Reflectance is obtained by the spectrum's <code>illum</code> method but should actually be multiplied by a large constant (10-20) and then clamped to the correct range to make sure rays do not terminate too quickly (quick termination leads to noisier renderings).</p>
+
+        <p>If the ray is not terminated, a <code>ray</code> is created in the direction <code>w_in</code> (calculated during BSDF sampling) with depth of (1 - current ray's depth). That ray is traced recursively (returning when either it is terminated by Russian roulette or it's depth = 0) and then added to the accumulating spectrum, multiplied by the correct cosine and pdf factors.</p>
+
+        <p><small>*All images below rendered with 64 samples/pixel, 16 samples/light, maximum ray depth of 10.</small></p>
+         <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p4/global/coil_64_16_10.png"/>
+                <figcaption>sky/coil <code>(Fig. 4.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_64_16_10.png"/>
+                <figcaption>sky/CBspheres_lambertian <code>(Fig. 4.2)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p4/global/dragon_64_16_10.png"/>
+                <figcaption>sky/CBdragon <code>(Fig. 4.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheres_64_16_10.png"/>
+                <figcaption>sky/CBspheres <code>(Fig. 4.4)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br><br>
+        <h3>Direct vs Indirect Illumination</h3>
+        <br>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p4/indirect/spheres_16_16_20_global.png"/>
+                <figcaption>sky/CBspheres <code>(Fig. 4.6)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>Below we examine a Cornell box scene containing a perfect mirror sphere and a glass sphere rendered only with direct illumination (<code>Fig. 4.6</code>) and only with indirect illumination(<code>Fig. 4.7</code>). The maximum ray depth in <code>Fig. 4.7</code> was set to 100 in order to see the effect of termination being controlled only by Russian roulette.</p>
+
+        <p><small>*These were only rendered at 64 samples/pixel, 16 samples/light. It's on the lower side, but they suffice for a comparison of the two types of illumination.</small></p>
+        <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p4/indirect/spheres_16_16_0.png"/>
+                <figcaption>sky/CBspheres <code>(Fig. 4.6)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/indirect/spheres_16_16_100.png"/>
+                <figcaption>sky/CBspheres <code>(Fig. 4.7)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>With indirect illumination not only can we see the effect of light being reflected and refracted by the sphere's materials, but also there are slight shadows (like of the sphere on the right wall) that are washed out under global illumination (<code>Fig. 4.7</code>). The colors of the left and right walls also slightly bleed outward as their light reflected light is again reflected by the neighboring surfaces.</p>
+
+        <p>Notice the rendering on the left is almost devoid of rendering artifacts while the one on the right has pixels abnormally brighter than their neighbors. With direct illumination a set number of rays are created for every pixel so each pixel, provided the sampling rate was high enough, returns a fairly accurate and constant (if rendered multiple times) representation of its color under the scene's ceiling light. On the other hand, noise in indirect illumination is accentuated by small light sources and glossy materials, when a ray of light randomly reflects into a bright light source. The rendering artifacts in <code>Fig. 4.7</code> can be fixed by upping the sample rate (as in the next section), but sometimes white specks, a.k.a. "fireflies" may still appear and require a different solution.</p>
+
+        <br>
+        <h3>Incrementing max ray depth</h3>
+        <p>When rendering Lambertian materials, increasing max ray depth will result in brighter images due to the accumulation of light from successive bounces. There spheres are diffuse, meaning they reflect an even amount of light in all directions, so after the first drastic change from direct to global illumination the differences are barely noticeable. A slight increase in overall brightness can be detected in the first four bounces.</p>
+
+         <p><small>*All images below rendered with 64 samples/pixel, 16 samples/light.</small></p>
+        <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p4/global/spheresLambert_64_16_0.png"/>
+                <figcaption>max_ray_depth = 0 <code>(Fig. 4.8)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_64_16_1.png"/>
+                <figcaption>max_ray_depth = 1 <code>(Fig. 4.9)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p4/global/spheresLambert_64_16_2.png"/>
+                <figcaption>max_ray_depth = 2 <code>(Fig. 4.10)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_64_16_3.png"/>
+                <figcaption>max_ray_depth = 3 <code>(Fig. 4.11)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p4/global/spheresLambert_64_16_10.png"/>
+                <figcaption>max_ray_depth = 10 <code>(Fig. 4.12)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_64_16_100.png"/>
+                <figcaption>max_ray_depth = 100 <code>(Fig. 4.13)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br><br>
+        <h3>Varying samples per pixel</h3>
+        <p>All rendered with a max ray depth of 10, the sequence of renders below show how increasing sample rate decreases the level of noise, as expected. With more samples, the color of each pixel can average out to an accurate value. 1024 samples per pixel seems to be the minimum, at this resolution, for a truly smooth rendering.</p>
+        <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p4/global/spheresLambert_1_16_10.png"/>
+                <figcaption>samples/pixel = 1 <code>(Fig. 4.8)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_4_16_10.png"/>
+                <figcaption>samples/pixel = 4 <code>(Fig. 4.9)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p4/global/spheresLambert_16_16_10.png"/>
+                <figcaption>samples/pixel = 16 <code>(Fig. 4.10)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_64_16_10.png"/>
+                <figcaption>samples/pixel = 64 <code>(Fig. 4.11)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p4/global/spheresLambert_256_16_10.png"/>
+                <figcaption>samples/pixel = 256  <code>(Fig. 4.12)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/global/spheresLambert_1024_16_10.png"/>
+                <figcaption>samples/pixel = 1024 <code>(Fig. 4.13)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part6"></a>
+    <h2>Part 6: Materials</h2>
+    <p>Note that in BRDF/BSDF calculations, it is irrelevant which vector is labeled "outgoing" and "incoming" due to reciprocity. The results should be the same either way, dependent only on the surface's characteristics and the angle of incidence.</p>
+    <h4>Reflection</h4>
+    <p>In a perfect specular reflection, the cosine of the angle between the normal and the outgoing vector and that between the normal and incoming vector is the same. Indeed, the amount of light reflected is equal to the amount of light carried in by the incoming ray. In reality, however, materials are hardly ever perfectly reflective.</p>
+     <div class="imageWrapper">
+        <div class="images widen">
+            <img src="images/p5/reflection.png"/>
+            <figcaption><code>(Fig. 5.1)</code></figcaption>
+        </div>
+        <div class="images">
+            <img src="images/p5/dragon_1024_1_10.png"/>
+            <figcaption>perfect mirror BSDF, 1024 samples/pixel, max_ray_depth = 10 <code>(Fig. 5.2)</code></figcaption>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <br>
+    <h4>Refraction</h4>
+        <p>When light passes from one medium to another, it changes direction according to the speed of light in both mediums. A surface's index of refraction is calculated as the speed of light constant <em>c</em> over the speed of light in that medium <em>v</em>. Air has a refractive index commonly approximated as 1, but light travels slower in glass and thus it bends (as seen in the left sphere in <code>Fig. 5.4.</code>).</p>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p5/refraction.png"/>
+                <figcaption><code>(Fig. 5.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/glass_sample/spheres_1024_1_100.png"/>
+                <figcaption>perfect mirror & glass BSDF, 1024 samples/pixel, max_ray_depth = 100 <code>(Fig. 5.4)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The transmitted vector's direction follows Snell's Law of Refraction:</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/snell.png"/>
+                <figcaption><code>(Fig. 5.4)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>Total inner reflection occurs when light moves from a more to less optically dense medium, i.e. the index of refraction of the ray's current medium is less than that of the next medium. When the angle of in the incoming ray is less than the critical angle, we must determine whether to reflect or refract light. The ratio of reflected energy to refracted energy is physically represented by the Fresnell equations, but an accepted and accurate replacement to those costly calculations is Schlick's approximation:</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/schlick.png"/>
+                <figcaption><code>(Fig. 5.5)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        where <em>R</em> is the specular reflection coefficient, &theta; is the angle of incidence, and <em>n<sub>1</sub></em>, <em>n<sub>2</sub></em> are the current and next material's refractive indices, respectively.</p>
+    <h4>Tracing the Path</h4>
+    <p><small>*All images rendered with 1024 samples/pixel.</small></p>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_0.png"/>
+            <figcaption>max_ray_depth = 0 <code>(Fig. 5.6)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>A ray depth of 0 is equivalent to the settings seen above with only direct illumination.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_1.png"/>
+            <figcaption>max_ray_depth = 1 <code>(Fig. 5.7)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>After 1 bounce, we can see light reflected by the spheres' surfaces. Visualizing a several rays eminating from the ceiling light source. In the previous image they reached, for example, the blue wall. Now they has bounced off the wall and are at the left sphere, where some are reflected into our eyes and are thus visible. The others are "inside" the sphere.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_2.png"/>
+            <figcaption>max_ray_depth = 2 <code>(Fig. 5.8)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>After 2 bounces, the rays of light inside the sphere exit the sphere at a refracted angle. Light reflected by the glass sphere in the previous stage can now be seen in the mirror sphere's reflection.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_3.png"/>
+            <figcaption>max_ray_depth = 3 <code>(Fig. 5.9)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>Light that passed through the glass sphere can be seen concentrated on the ground below. The mirror sphere's reflection of the glass sphere is now blue, having just received the first rays of light that were refracted.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_4.png"/>
+            <figcaption>max_ray_depth = 4 <code>(Fig. 5.10)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>The bright light on the ground, having been again reflected by the glass sphere in the previous stage, is visible on the right wall. The mirror sphere's reflection continues to update, lagging behind the actual scene by 1 stage.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_5.png"/>
+            <figcaption>max_ray_depth = 5 <code>(Fig. 5.11)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>The difference between 4 and 5 bounces is not noticeably visible. The room gets a bit brighter, as do the spheres.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_depth/spheres_1024_1_6.png"/>
+            <figcaption>max_ray_depth = 6 <code>(Fig. 5.12)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>At 6 bounces, the only significant change from a render with a max ray depth of 5 is the appearance of a specular highlight on the top of the glass sphere.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <div class="imageWrapper imageRight">
+        <div class="images">
+            <img src="images/p5/glass_sample/spheres_1024_1_100.png"/>
+            <figcaption>max_ray_depth = 100 <code>(Fig. 5.3)</code></figcaption>
+        </div>
+        <div class="imagesR">
+            <p>With a max ray depth of 100, Russian roulette is allowed to play out without early termination. There is not too much change from the previous render. This is a really good thing, since it means that while early termination moves our render away from completely faithful real-world physics, it is still a fairly accurate model.</p>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <br><br>
+    <h4>Varying Sample Rate</h4>
+    <p>*All images rendered with max ray depth 10. As sample rate increases, shadows are smoothed and rendering artifacts disappear.</p>
+    <div class="imageWrapper">
+             <div class="images widen">
+                <img src="images/p5/glass_sample/spheres_1_1_100.png"/>
+                <figcaption>samples/pixel = 1 <code>(Fig. 5.8)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/glass_sample/spheres_4_1_100.png"/>
+                <figcaption>samples/pixel = 4 <code>(Fig. 5.9)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p5/glass_sample/spheres_16_1_100.png"/>
+                <figcaption>samples/pixel = 16 <code>(Fig. 5.11)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/glass_sample/spheres_64_1_100.png"/>
+                <figcaption>samples/pixel = 64 <code>(Fig. 5.10)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images widen">
+                <img src="images/p5/glass_sample/spheres_256_1_100.png"/>
+                <figcaption>samples/pixel = 256 <code>(Fig. 5.12)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/glass_sample/spheres_1024_1_100.png"/>
+                <figcaption>samples/pixel = 1024 <code>(Fig. 5.13)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+</div>
+<script>    
+    $(document).ready(function() {
+        var offset = 250;
+        $(window).scroll(function() {
+            if ($(this).scrollTop() > offset) {
+                $('.navbar').fadeIn('slow');
+            } else {
+                $('.navbar').fadeOut('slow');
+            }
+        });
+        $('.scrollTo').click(function(event) {
+            event.preventDefault();
+            var anchor = $("a[id='"+ $(this).attr('href') +"']");
+            $('html, body').animate({scrollTop: anchor.offset().top},'slow');
+            return false;
+        })
+    });
+</script>
+</body>
+</html>
+
+
+
+

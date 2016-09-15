@@ -1,0 +1,147 @@
+@charset "UTF-8";
+
+* {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	outline: 0;
+}
+
+html {
+	background: #f9f6f6;
+}
+
+body {
+	font-family: Calibri, Arial, sans-serif;
+	background: #f9f6f6;
+}
+
+strong {
+	color: #2d4159;
+}
+
+
+h1, h2, h3, h4 {
+	font-family: "Lato", Times, serif;
+	color: #2d4159;
+}
+
+h1 {
+	font-size: 50px;
+}
+
+h2 {
+	font-size: 20px;
+}
+
+h3 {
+	font-size: 16px;
+}
+
+h4 {
+	font-size: 14px;
+}
+
+p {
+	font-family: "Cabin", Calibri, Arial, sans-serif;
+	font-size: 16px;
+	color: black;
+}
+
+a {
+	color: #f38335;
+	text-decoration: none;
+}
+a:hover {
+	color: #f35100;
+} 
+
+.back-to-top {
+	display: none;
+    width: 60px;
+    height: 60px;
+    text-indent: -9999px;
+    position: fixed;
+    z-index: 999;
+    right: 20px;
+    bottom: 20px;
+    background: #E3EAA5 url("../images/up-arrow.png") no-repeat center 43%;
+    -webkit-border-radius: 30px;
+    -moz-border-radius: 30px;
+    border-radius: 30px;
+}
+
+/* Header
+------------------------------------------------------------- */
+.header {
+	width: 100%;
+}
+
+.info {
+	color: black;
+	text-align: center;
+	font-weight: 700;
+	/*padding-top: 100px;*/
+	/*padding-bottom: 50px;*/
+	text-transform: uppercase;
+}
+
+.info h1 {
+	line-height: 100%;
+	font-size: 70px;
+}
+
+.info h2 {
+	/*margin-top: 10px;*/
+	/*margin-bottom: 10px;*/
+}
+
+/* Navbar
+------------------------------------------------------------- */
+.navbar {
+	position: fixed;
+	background: #A2D7D8;
+	text-align: center;
+	margin-top: 0px;
+	padding-top: 1em;
+	padding-bottom: 1em;
+	width: 100%;
+}
+.navbar li {
+	font-family: "Cabin", Calibri, Arial, sans-serif;
+	font-size: 14px;
+	display: inline-block;
+	padding: 0px 40px;
+}
+
+.navbar a {
+	color: white;
+}
+
+/* Table of Contents
+------------------------------------------------------------- */
+#toc {
+    margin-bottom: 40px;
+}
+
+#toc li {
+    overflow: hidden;
+    padding-bottom: 2px;
+}
+
+/* Entries
+------------------------------------------------------------- */
+.entrywrap {
+	background: #fcfaf9;
+	width: 580px;
+	margin: 20px auto 30px;
+}
+
+.entry {
+	margin-bottom: 30px;
+}
+
+.entry p {
+	margin-bottom: 20px;
+}
+

@@ -1,0 +1,361 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Lens Simulator</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/cs184.css">
+    <link rel="stylesheet" type="text/css" href="lenssim.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <div class="info">
+        <h1>Project 4: Lens Simulator</h1>
+        <br>
+        <p>Virtual Camera in C++</p>
+        <p>April 2016</p>
+    </div>
+</div>
+<div class="content">
+    <h2>Navigation</h2>
+        <ol id="toc">
+            <li> <a class="scrollTo" href="part1">Tracing Rays through Lenses</a></li>
+            <li> <a class="scrollTo" href="part2">Contrast-based Autofocus</a></li>
+            <li> <a class="scrollTo" href="part3">Faster Contrast-based Autofocus</a></li>
+        </ol>
+
+    <h2>Introduction:</h2>
+        <p>In this project I added a realistic camera lens simulator with autofocus to my PathTracer. The majority of the new work is done in <code>lenscamera.cpp</code>, which parses a file describing lenses as multiple lens elements, each with a defined radius, aperture and position. Rays are then traced from the sensor through the lens and then towards the scene, where business commences as usual. The perspective and filtering effects seen are a product of how light refracts as it travels through the lens system.</p>
+
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/wide_dragon.png"/>
+                <figcaption>Wide-angle lens image of <em>CBdragon.dae</em> (Fig. 0.1)</code></figcaption>
+            </div>
+        </div>
+    
+    <a id="part1"></a>
+    <h2>Part 1: Tracing Rays through Lenses</h2>
+        <h3>Upgrading the Lens</h3>
+            <br>
+            <div class="imageWrapper imageRight">
+                <div class="imagesL">
+                   <p>PathTracer originally utilized a simple pinhole camera, where the sensor plane was located in front of the pinhole to avoid handling flipped images. With this ideally small pinhole, each unobstructed point from the scene cast a unique corresponding point on the sensor, producing uniformly focused images.</p>
+
+                   <p>Realistically, however, pinhole cameras have to sacrifice brightness for sharpness, or vice versa. When the hole is expanded to let in more light, that light comes from a larger range of angles and trace to overlapping positions on the sensor, leading to blurriness.</p>
+                </div>
+                <div class="images">
+                    <img src="images/p1/pinhole.png"/>
+                    <figcaption>Pinhole Camera <a href"https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Pinhole-camera.svg/2000px-Pinhole-camera.svg.png"> (source)</a><code>(Fig. 1.1)</code></figcaption>
+                    
+                </div>
+                <div style="clear:both"></div>
+            </div>
+            <div class="imageWrapper imageRight">
+                <div class="imagesL">
+                   <br><br><br><br><p>On the other hand, a lens can both capture a large amount of light and focus those rays into a sharp image. Lenses can also manipulate the refraction of light through their systems, focusing in on objects at different lengths and causing other depths to blur out. </p>
+                </div>
+                <div class="images">
+                    <img src="images/p1/lens.png"/>
+                    <figcaption>Thin Lens<code>(Fig. 1.2)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <h3>Ray Tracing</h3>
+            <p>The code for tracing camera rays through the lens elements could essentially be copied from PathTracer's <code>Sphere::intersect()</code> and <code>BSDF::refract()</code> functions, with a few minor adjustments:
+            <ul>
+                <li><p><code>intersect()</code> returns the closer intersection if the ray is entering the sphere that each <code>LensElement</code> is modeled as a part of, and the further intersection if exiting.</p></li>
+                <li><p>the index of refraction ratio in <code>refract()</code> is prev_ior / curr_ior if the ray is being traced forwards, and flipped if tracing backwards</p></li>
+                <li><p>special cases in both functions for when the <code>LensElement</code> is the aperture element. Then, the ray is intersected with a plane instead of a sphere, and no refraction occurs when the ray passes through.</p></li>
+            </ul>
+        <a id="e1"></a>
+        <h3>Ray Generation</h3>
+            <p>Since samples are taken pointing directly to the lens element closest to the sensor, for most cases rays should successfully trace through the entire lens system. To reduce noise when using the fisheye lens, however, where some samples lie outside the lens circle, a <code>while</code> loop can be used to take samples until one passes through. With this, the number of rays attempted also needs to tracked, since each failed ray equates to a black pixel. The number of attempts is then passed back to <code>PathTracer::raytrace_pixel()</code>, where the returned spectrum is divided by that value in order to produce correct vignetting.</p>
+
+            <p>Correct optical distortion can be obtained by also multiplying the spectrum by <code>cos^4(&theta;)</code>, where &theta; is the camera ray's original direction's z-coordinate.</p>
+        <h3>Focal Length</h3>
+        <br>
+            <div class="imageWrapper">
+                <div class="images">
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>Infinity Depth</th>
+                            <th>Close Focus Depth</th>
+                            <th>Close Focus Distance</th>
+                        </tr>
+                        <tr class="numbers">
+                            <td class="cat">Double Gauss</td>
+                            <td>51.2609</td>
+                            <td>62.7567</td>
+                            <td>247.72</td>
+                        </tr>
+                        <tr class="numbers">
+                            <td class="cat">Wide-angle</td>
+                            <td>28.7634</td>
+                            <td>34.5797</td>
+                            <td>90.1224</td>
+                        </tr>
+                        <tr class="numbers">
+                            <td class="cat">Telephoto</td>
+                            <td>188.758</td>
+                            <td>236.875</td>
+                            <td>1627.1</td>
+                        </tr>
+                        <tr class="numbers">
+                            <td class="cat">Fisheye</td>
+                            <td>28.7439</td>
+                            <td>31.1811</td>
+                            <td>32.9881</td>
+                        </tr>
+                    </table>
+                    <figcaption><code>(Table 1.1)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+            <p>The focal length is the distance between the lens and the image sensor when the subject is in focus. Hence, it is a measure of the refracting power of the lens; a lens system with a shorter focal length brings rays into focus at a shorter distance, meaning it bends rays more sharply. Longer focal lengths produce magnification and a narrow angle of view, and used for most photography and all telescopy lens.</p>
+
+            <p>In <code>Table 1.1</code>:</p>
+            <ul>
+                <li><p>"infinity depth" refers to the sensor depth at which rays coming from a conceptually infinite distance away on the optical axis converge. This is calculated by tracing a parallel object-side ray, originating a paraxial distance above the optical axis, backwards through the lens system and finding the point at which it intersects the axis.</p></li>
+                <li><p>"close focus depth" is the image-side depth conjugate to the closest depth world-side that the lens can focus on. This was found through a similar method as the infinity depth, except the ray originated on the optical axis and was directed at a small angle offset.</p></li>
+                <li><p>"close focus distance" is the world-side nearest object distance described above.</p></li>
+            </ul>
+
+            <p>The images below showcase various lenses through the <code>lenstenster</code> program. Double Gauss lens are some of the most developed and widely used lens in photography today; the symmetry of its system helps reduce optical abberations over a large focal plane. Wide-angle lens have focal lengths shorter than normal, which allows more of the scene to be included in the photograph and/or emphasize the difference between the background and foreground. Telephoto lens have extremely long focal lengths and can focus in on far away objects. Lastly, fisheye lens are an ultra wide-angle lens that strongly distort light, intended to create panoramic or hemispherical images.</p>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p1/crop/gauss_back.png"/>
+                    <figcaption>Double Gauss Lens<code>(Fig. 1.3)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p1/crop/wide_back.png"/>
+                    <figcaption>Wide-angle Lens<code>(Fig. 1.4)</code></figcaption>
+                </div>
+            </div>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p1/crop/telephoto_back.png"/>
+                    <figcaption>Telephoto Lens<code>(Fig. 1.5)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p1/crop/fish_back.png"/>
+                    <figcaption>Fisheye Lens<code>(Fig. 1.6)</code></figcaption>
+                </div>
+            </div>
+            <br>
+            <p>Sensor depth is inversely correlated with the depth of its world-side conjugate. The graphs below each start at the lens' infinity depth and move towards the close focus depth along the x-axis. They all follow a highly similar dying exponential curve (however, note the differences in axis scale).</p>
+
+            <p><small>*Also note, the camera in <code>lenscamera</code> looks down the negative z-axis, so depth values are actually negative. The absolute values of these points were taken to show a more intuitive illustration of focal length.</small>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p1/plot_gauss.png"/>
+                    <figcaption>(Fig. 1.7)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p1/plot_wide.png"/>
+                    <figcaption>(Fig. 1.8)</code></figcaption>
+                </div>
+            </div>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p1/plot_telephoto.png"/>
+                    <figcaption>(Fig. 1.9)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p1/plot_fish.png"/>
+                    <figcaption>(Fig. 1.10)</code></figcaption>
+                </div>
+            </div>
+            <br>
+            <h3>Examples</h3>
+            <p><code>Fig. 1.11</code> was produced using the double Guass lens manually focused on the neck of the dragon. Objects in the background, including the room and the dragon's body, are out of focus and thus blurred. Blurring also occurs to objects closer to the lens than the focal distance, such as the side of the dragon's head.</p>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p1/dragon_head.png"/>
+                    <figcaption>Double Gauss Lens (Fig. 1.11)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p1/dragon_head_normal.png"/>
+                    <figcaption>Pinhole Camera (Fig. 1.12)</code></figcaption>
+                </div>
+            </div>
+
+    <a id="part2"></a>
+    <h2>Part 2: Contrast-based Autofocus</h2>
+        <h3>Measuring Focus</h3>
+            <p>In order to implement autofocus, there needed to be a way for the camera to judge the level of focus on an image patch. I took the straightforward approach and compared variance. Out-of-focus image patches have lower variance compared to in-focus patches, since in the former colors are blurred and there are less differences between a pixel and its neighbors. Noise can make this metric wildly inaccurate, however, so each patch needs to be rendered at a high enough pixel and light sample rate before its variance is measured.</p>
+
+            <p>Pseudocude for the function <code>focus_metric()</code> is presented below:</p>
+            <pre class="prettyprint">
+
+            double focus_metric(ImageBuffer& ib) {
+
+                rMean = 0, gMean = 0, bMean = 0
+                for (each pixel in image patch) {
+                    rMean += pixel's red channel
+                    gMean += pixel's green channel
+                    bMean += pixel's blue channel
+                }
+                average rMean, gMean, bMean by dividing each value by the dimension of the image
+
+                rVar = 0, gVar = 0, bVar = 0;
+                for (each pixel in image patch) {
+                    rVar += (pixel's red channel - rMean)^2
+                    gVar += (pixel's green channel - gMean)^2
+                    bVar += (pixel's blue channel - bMean)^2
+                }
+                average rVar, gVar, bVar
+                return (rVar + gVar + bVar) / 3.0
+            }
+            </pre>
+            <a id="e2"></a>
+            <p><sup><small>(E)</small></sup> The function can be optimized with SSE intrinsics. Instead of separate variables, the sums in both loops can be accumulated in <code>__m128</code> registers. This does mean that there is an extra operation done at each stage, since there are only 3 relevant channels for the registers' 4 indices, but there is still an ~80% performance increase with the optimizations (0.0260s to 0.0061s for <em>CBspheres_lambertian.dae</em>; 0.0475s to 0.0081s for <em>CBdragon.dae</em>). Since image patches are usually small, the overhead cost of unrolling loops is not worth it.
+        <h3>Autofocus</h3>
+            <p>The <code>autofocus()</code> function looks at sensor depths between the infinity depth and close focus depth and uses <code>focus_metric()</code> to calculate and return the depth that renders the selected image patch at the highest focus. The maximum step size between depths that allows the function to be precise within one output pixel can be calculated using the equation for size of the circle of confusion (manipulate <em>d'</em> so that <em>C</em> = 1).</p>
+
+            <div class="imageWrapper imageRight">
+                <div id="formula">
+                    <img src="images/p2/coc.png"/>
+                </div>
+                <div class="images">
+                    <img src="images/p2/thin_lens.png"/>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+            <figcaption><a href="http://cs184.eecs.berkeley.edu/cs184_sp16/lecture/cameras-lenses-2/slide_052">(source)</a> (Fig. 2.1)</code></figcaption>
+
+            <p>The return value of <code>focus_metric()</code> increases as the correct focus depth is approached and decreases as it moves away, as displayed by the graph in <code>Fig. 2.3</code>. This can be used to implement a binary(ish) search. See <a class="scrollTo" href="part3"><strong>Part 3</strong></a> for more detail.</p>
+            
+            
+
+            <p>The focus metric used is not the most robust &mdash; variance is highly susceptible to interference from noise. Therefore plotting sensor depth vs. focus metric does not produce a nice parabola. The general shape is there, though, as seen when the graph is zoomed tight on the nearly vertical scattering of points in <code>Fig 2.2.</code></p>
+
+            <div class="imageWrapper imageRight">
+                <div id="images">
+                    <img src="images/p2/autofocus_graph_wide.png"/>
+                    <figcaption><code>(Fig. 2.2)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p2/autofocus_graph_zoom.png"/>
+                    <figcaption><code>(Fig. 2.3)</code></figcaption>
+                </div>
+            </div>
+            <figcaption>Tested on <em>CBspheres_lambertian.dae</em></figcaption>
+
+        <h3>Examples</h3>
+            <br>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p2/gauss_lucy.png"/>
+                    <figcaption>Double Gauss Lens <code>(Fig. 2.4)</code></figcaption>
+                    <p class="explain">The camera is focused on the statue's head, with blurring visible in the backward, nearing the base of the statue, and in the upstretched hand. These lens were designed to reduce optical abberations, so the camera had to be aimed steeply downward in order to produce significant focus blur. </p>
+                </div>
+                <div class="images">
+                    <img src="images/p2/wide_lucy.png"/>
+                    <figcaption>Wide-angle Lens <code>(Fig. 2.5)</code></figcaption>
+                    <p class="explain">The camera is positioned very close to the statue, but with the wide field-of-view much of the room is included in the shot. It is focused on the closest object world-side, the statue's near arm, so the rest of the image is in the background and gradually increases in blurriness, from statue's head to its far arm and then the room walls.</p>
+                </div>
+            </div>
+            <div class="imageWrapper">
+                <div class="images widen">
+                    <img src="images/p2/telephoto_lucy.png"/>
+                    <figcaption>Telephoto Lens <code>(Fig. 2.6)</code></figcaption>
+                    <div>
+                        <div class="imagesCap">
+                             <img src="images/p2/telephoto_lucy_cam.png"/>
+                             <figcaption><code>(Fig. 2.7)</code></figcaption>
+                        </div>
+                        <div>
+                            <p class="explain">Telephoto lens allow for a high-level of magnification. Even from very far away, a clear image focused on the statue's head can be captured. Note, however, that despite the clarity and size of statue, the box's much shallower appearance is indicative of the extreme focal length. </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="images">
+                    <img src="images/p2/fish_lucy.png"/>
+                    <figcaption>Fisheye Lens <code>(Fig. 2.8)</code></figcaption>
+                    <p class="explain">Since the shot is focused on the statue's close hand, the image is spherically distorted around that point. There isn't much focus blur in the background, but the vignette is present since light rays on the edges of fisheye lens are less likely to successfully pass through the system.</p>
+                </div>
+            </div>
+    <a id="part3"></a>
+    <h2>Part 3: Faster Contrast-based Autofocus</h2>
+        <p>The maximum step size that <code>autofocus</code> is tolerant of turns out to be small &mdash; very very very small. Each call to <code>focus_metric()</code> also requires the image patch to be re-rendered at a high sampling rate, and with a linear implementation, up to hundreds of calls are made. Autofocusing for even the fisheye lens, which has the smallest difference between infinty and close focus depths, takes much too long.</p>
+
+        <h3>Binary-ish Search</h3>
+        <p>Due to the focus metric not being very robust, performing binary search with a tiny step size will produce inaccurate results. Therefore the actual steps used in <code>autofocus()</code> are much larger and the number of possible results is reduced by a conservative quarter, not a half, each iteration; hence the "ish". The maximum step size is used to terminate the loop once the search range has adequately converged.</p>
+        <pre class="prettyprint">
+
+        double calc_focus(double d, Imagebuffer ib);
+        // renders ib at depth d and returns focus_metric(ib)
+
+        void autofocus() {
+            
+            double best_focus = -1,
+                   lo = infinity_depth,
+                   hi = close_focus_depth,
+                   range = hi - lo;
+            Imagebuffer ib;
+            
+            while ( range > max_tolerance_distance ) {
+                double mid = lo + (hi - lo) / 2,
+                       step = (hi - mid) / 2,
+                       mid_focus = calc_focus(mid, ib);
+
+                if (best_focus > mid_focus) {          
+                    if (mid > best_depth) {
+                        hi = mid + step;
+                    } else {
+                        lo = mid - step;
+                    }
+                    continue;
+                }
+                double next = mid + step,
+                       next_focus = calc_focus(mid + step, ib);
+                if (next_focus > mid_focus) {
+                    lo = next;
+                    best_focus = next_focus;
+                    best_depth = next;
+                } else {
+                    hi = next;
+                    best_focus = mid_focus;
+                    best_depth = mid;
+                }
+            }
+        }
+        </pre>
+
+        <p>An even faster and precide autofocus method would be to trace a ray back from the desired world-side focus depth, since PathTracer knows (or can quickly calculate) the position of all objects in the scene. As a realistic lens simulation, though, <code>autofocus()</code> is both accurate and efficient, making only 20 to 30 calls to <code>calc_focus()</code> compared to the exponentially greater calls by the linear approach.</p>
+        <h3>Other Optimizations</h3>
+            <br>
+            <ol>
+                <li><p><a class="scrollTo" href="e1">Multiple ray generation attempts</a></p></li>
+                <li><p><a class="scrollTo" href="e2">SSE intrinsics in <code>focus_metric()</code></a></p></li>
+            </ol>
+</div>
+<script>    
+    $(document).ready(function() {
+        var offset = 250;
+        $(window).scroll(function() {
+            if ($(this).scrollTop() > offset) {
+                $('.navbar').fadeIn('slow');
+            } else {
+                $('.navbar').fadeOut('slow');
+            }
+        });
+        $('.scrollTo').click(function(event) {
+            event.preventDefault();
+            var anchor = $("a[id='"+ $(this).attr('href') +"']");
+            $('html, body').animate({scrollTop: anchor.offset().top},'slow');
+            return false;
+        })
+    });
+</script>
+</body>
+</html>
+
+
+
+
