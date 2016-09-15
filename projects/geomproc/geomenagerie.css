@@ -1,0 +1,58 @@
+@charset "UTF-8";
+
+code {
+    font-size: 0.9em;
+}
+
+.imageWrapper {
+    width: 1075px;
+    margin-left: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.imageWrapper3 {
+    width: 555px;
+    display: flex;
+    justify-content: center;
+}
+
+.imageWrapper3 figcaption {
+    font-size: 0.8em;
+}
+
+.cramped figcaption{
+    font-size: 0.8em;
+}
+
+.cramped div {
+    margin-left: -50px;
+}
+
+.images3 {
+    padding-right: 15px;
+}
+
+#add h3 {
+    padding: 85px 12px 0px;
+}
+
+.images {
+    padding-right: 40px;
+}
+
+.imageRight {
+    float: left;
+}
+
+.imageWrapper.imageRight {
+    margin-left: 0px;
+}
+
+.imagesR {
+   margin-left: -15px;
+}
+
+.imagesR p {
+    padding: 20px 15px 75px;
+}

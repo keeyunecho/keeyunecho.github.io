@@ -1,0 +1,690 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Geomesh</title>
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/184.css">
+    <link rel="stylesheet" type="text/css" href="geomenagerie.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <div class="info">
+        <h1>Project 2: GeoMesh</h1>
+        <br>
+        <p>Geometry processor in C++, shaders in GLSL</p>
+        <p>March 2016</p>
+    </div>
+</div>
+<div class="content">
+    <h2>Navigation</h2>
+        <ol id="toc">
+            <li> <a class="scrollTo" href="#part1">Fun with Bezier Patches</a></li>
+            <li> <a class="scrollTo" href="#part2">Average Normals for Half-Edge Meshes</a></li>
+            <li> <a class="scrollTo" href="#part3">Edge Flip</a></li>
+            <li> <a class="scrollTo" href="#part4">Edge Split</a></li>
+            <li> <a class="scrollTo" href="#part5">Upsampling via Loop Subdivision</a></li>
+            <li> <a class="scrollTo" href="#part6">Fun with Shaders</a></li>
+        </ol>
+
+    <a id="part1"></a>
+    <h2>Part 1: Fun with B&eacute;zier Patches</h2>
+        <h3>B&eacute;zier Curves</h3>
+        <p>B&eacute;zier curves are a form of parametric curves that can be used to model smooth curves and motions. An <em>n</em>-degree B&eacute;zier curve consists of <em>n+1</em> control points; straight lines drawn connecting consecutive control points form the control polygon.</p>
+        
+        <div class="imageRight">
+            <div class="images">
+                <img src="images/p1/bernstein.png"/>
+                <figcaption><code>Eq. 1.1</code></figcaption>
+            </div>
+        </div>
+        <p><br>A Bezier c&eacute;rve can be represented as a polynomial in the Bernstein polynomial, i.e., a linear combination of the <em>n + 1</em> Bernstein basis polynomials (<code>Eq. 1</code>). While Bernstein polynomails were known since 1912, it was not until 1962 that de Casteljau developed his namesake algorithm to evaluate Bernstein polynomials in a numerically stable way. </p> 
+        <div style="clear:both"></div>
+        <br>
+        <div class="imageRight">
+            <div class="images">
+                <img src="images/p1/bezd1.png"/>
+                <figcaption><a href="https://www.khanacademy.org/partner-content/pixar/animate/parametric-curves/a/equations-from-de-casteljaus-algorithm"><code>(Fig. 1.)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/bezd2.png"/>
+                <figcaption><a href="https://www.khanacademy.org/partner-content/pixar/animate/parametric-curves/a/equations-from-de-casteljaus-algorithm"><code>(Fig. 1.2)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <h3>de Casteljau's Algorithm</h3>
+        <p>Between any two consecutive points <em>A</em> and <em>&Beta;</em> we can define a point </p>
+        <p align="middle"><em>P<sub>1</sub>(t) = (1 - t)A + tB</em></p>
+        <p> so that as <em>t</em> moves from 0 to 1, <em>P<sub>1</sub>(t)</em> traces out a line from <em>A</em> to <em>B</em>. A degree 1 curve has only 2 control points, so <em>P<sub>1</sub>(t)</em> is linear and the "curve" is linear (<code>Fig. 1</code>).</p>
+        <br><p>A degree 2 B&eacute;zier curve is created by adding a third control point. The same equation <em>P<sub>1</sub>(t)</em> is used to find the position of a point on lines <em>AB</em> and <em>BC</em>. Another line is drawn between those points, and we interpolate again using <em>t</em> to find the point on the Bezier curve. Therefore</p>
+        <p align="middle"><em>P<sub>2</sub>(t) = (1 - t)<sup>2</sup>A + 2(1-t)tB + t<sup>2</sup>C</em></p>
+        <p>Here, the equation traces out a curved line. The start and end of a B&eacute;zier curve are tangent to the first and last edges of the  B&eacute;zier polygon. Note that de Casteljau's Algorithm interpolates endpoints but not tangents as the Catmull-Rom curve does.</p> 
+        <div style="clear:both"></div>
+        <br>
+        <p>Recursive interpolation can be completed in the same manner for B&eacute;zier curve of higher degrees. Recalling the Bernstein polynomial mentioned above, we can see that the coefficients in <em>P<sub>n</sub>(t)</em> are the Bernstein basis polynomials of degree <em>n</em>.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/bernstein2.png"/>
+                <figcaption><code>Eq. 1.2</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>A cubic B&eacute;zier curve, then, can hence be written in a convenient matrix form such that by using the representation of a B&eacute;zier patch as a continuous set of B&eacute;zier curves we can use <em>P(u, v)</em> to map a point with parametric coordinates (<em>u, v</em>) on the B&eacute;zier path into 3D coordinates.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/bernstein3.png"/>
+                <figcaption><a href="http://www.idav.ucdavis.edu/education/CAGDNotes/Matrix-Cubic-Bezier-Patch/Matrix-Cubic-Bezier-Patch.html"><code>Eq. 1.3</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>With the coefficient matrix and its transpose hard-coded as member variables of the BezierPatch class, the <code>4x4</code> matrix resulting from multipling the middle three matrices is calculated once per patch in <code>BezierPatch::preprocess()</code>. <em>P(u, v)</em> is then calculated and returned in <code>BezierPatch::evaluate</code>. Starting with just 16 control points, therefore, we can draw a B&eacute;zier patch like the one below.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/p1_surface1.png"/>
+                <figcaption>Single B&eacute;zier Patch, front view <code>(Fig. 2.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/p1_surface2.png"/>
+                <figcaption>Single B&eacute;zier Patch, side view <code>(Fig. 2.2)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <br>
+        <h3>Polygon Mesh</h3>
+        <p>With the corner entries in the <code>controlPoints</code> matrix forming the corners of a B&eacute;zier patch, the resulting shape is a quadrilateral. Each patch, therefore, must be tesselated into triangles to setup the half-edge mesh. This was done by incrementing in 1/<em>m</em> steps from 0 to 1 for both the <em>u</em> and <em>v</em> coordinates and adding 2 triangles with vertices: {(<em>u, v</em>), (<em>u + 1/m, v + 1/m</em>), (<em>u + 1/m, v</em>)} and {(<em>u, v</em>), (<em>u, v + 1/m</em>), (<em>u + 1/m, v + 1/m</em>)}.</p>
+        <p>Naturally, B&eacute;zier patches sampled at higher rates by increasing <em>m</em> results in smoother surfaces. They also take a lot longer to load.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/p1_teapot8.png"/>
+                <figcaption>Utah Teapot tesselated on 8x8 grid, front view <code>(Fig. 3.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/p1_teapot16.png"/>
+                <figcaption>Utah Teapot tesselated on 16x16 grid, front view <code>(Fig. 3.3)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/p1_teapot82.png"/>
+                <figcaption>Utah Teapot tesselated on 8x8 grid, top side view <code>(Fig. 3.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p1/p1_teapot162.png"/>
+                <figcaption>Utah Teapot tesselated on 16x16 grid, top side view <code>(Fig. 3.5)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <h4>Bugs</h4>
+        <p>Due to its nature the half-edge data structure is very picky about the way triangles are added. All triangles must be consistently oriented and vertices have to be input counterclockwise lest the surfaces be flipped inside-out.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p1/p1_bug1.png"/>
+                <figcaption>Utah Teapot with flipped normals <code>(Fig. 3.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+
+    <a id="part2"></a>
+    <h2>Part 2: Average Normals for Half-Edge Meshes</h2>
+        <p>Shading, like much else, can be greatly improved by increasing sampling frequency.</p>
+        <ul>
+            <li>Flat shading: Each face is shaded according to its surface normal vector (i.e., one vector per polyon). This is particularly bad for smooth surfaces, since the flat shading means the shading of every polygon along a curvature is visibly different from its neighbors.</li>
+            <li>Gourard shading: After computing one normal vector per vertex, the colors from each vertex are interpolated across the polygon. Typically in computer graphics the vertex normal is computed as the area-weighted average of its neighboring triangles' true surface normals. Gourard shading will result in visible specular highlights on vertices but not within triangles. Specular highlights will also appear to jump from vertex to vertex as the surface is moved.</li>
+            <li>Phong shading: <a class="scrollTo" href="#part6">(see part 6)</a></li>
+        </ul>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/p2_mesh.png"/>
+                <figcaption>Utah Teapot, mesh <br><code>(Fig. 4.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_faces.png"/>
+                <figcaption>Utah Teapot, flat shading <br><code>(Fig. 4.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_smooth.png"/>
+                <figcaption>Utah Teapot, Gourard shading <br><code>(Fig. 4.3)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/p2_mesh2.png"/>
+                <figcaption>Utah Teapot, mesh <br><code>(Fig. 4.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_faces2.png"/>
+                <figcaption>Utah Teapot, flat shading <br><code>(Fig. 4.5)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_smooth2.png"/>
+                <figcaption>Utah Teapot, Gourard shading <br><code>(Fig. 4.6)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/p2_mesh3.png"/>
+                <figcaption>Utah Teapot, mesh <br><code>(Fig. 4.7)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_faces3.png"/>
+                <figcaption>Utah Teapot, flat shading <br><code>(Fig. 4.8)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_smooth3.png"/>
+                <figcaption>Utah Teapot, Gourard shading <br><code>(Fig. 4.9)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <h3>Traversing the Half-Edge Mesh</h3>
+        <p>The half-edge data structure provides a good balance between simplicity and performance for geometric processing. Each typical component of a polygon &#8212; the faces, edges, and vertices) &#8212; only has to have one pointer to a corresponding half-edge. The half-edges act as "glue" that binds the mesh together and allows us to easily traverse and manipulate the mesh.</p>
+        <p>The function being called is within the <code>Vertex</code> namespace. <code>halfedge()</code> will return a half-edge pointing away from the vertex we want to find the normal for. Thus, it is intuitive to start iteration at <code>h->twin()</code>. The cross product of two vectors has a norm equal to twice the area of the triangle they define, meaning these vectors are already area weighted. To move onto the next triangle clockwise, <code>h</code> is incremented to <code>h->next()->twin()</code>. The loop stops when traversal comes full circle and <code>h</code> equals the vertex's half-edge. <code>Vertex::normal</code> then returns the re-normalized unit vector.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/halfedge.jpg"/>
+                <figcaption><code>(Fig. 5.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <h3>Bugs</h3>
+        <p>Incorrect traversal of the half-edge data structure can result in some fairly inaccurate shading. Incrementing <code>h</code> to <code>h->twin()->next()</code> instead of <br><code>h->next()->twin()</code>, for example, causes a seam to run down the side of the Utah Teapot <code>(Fig. 5.2)</code> and the cow to look rather sickly <code>(Fig. 5.3)</code>.
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/p2_bug1b_teapot.png"/>
+                <figcaption>Utah Teapot, bugged vertex normals <code>(Fig. 5.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_bug1b_cow.png"/>
+                <figcaption>Utah Teapot, bugged vertex normals <code>(Fig. 5.3)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p2/p2_bug1a_teapot.png"/>
+                <figcaption>Utah Teapot, de-bugged <code>(Fig. 5.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p2/p2_bug1a_cow.png"/>
+                <figcaption>Utah Teapot, de-bugged <code>(Fig. 5.5)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part3"></a>
+    <h2>Part 3: Edge Flip</h2>
+        <p>Flipping an edge does not delete or add any elements, and if every pointer is scrutinized during implementation the function is simple to write and debug. An edge flip involves or neighbors 47 pointers (4 x 9 half-edges, 4 vertices, 5 edges, and 2 faces), and there are 28 reassignments required.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p3/mesh_diagram.png"/>
+                <figcaption><a href="http://15462.courses.cs.cmu.edu/fall2015content/misc/HalfedgeEdgeOpImplementationGuide.pdf"<code>(Fig. 6.1)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <p>In each figure below, the edge that is shown as flipped in the next figure is highlighted in white.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p3/p3_1.png"/>
+                <figcaption><code>(Fig. 6.2)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p3/p3_2.png"/>
+                <figcaption><code>(Fig. 6.3)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p3/p3_3.png"/>
+                <figcaption><code>(Fig. 6.4)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p3/p3_4.png"/>
+                <figcaption><code>(Fig. 6.5)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part4"></a>
+    <h2>Part 4: Edge Split</h2>
+        <p>Splitting an edge results in the creation of some new elements, but the procedure to implement <code>HalfedgeMesh::splitEdge</code> is basically the same as for <code>HalfedgeMesh::flipEdge</code>. The position of the new vertex is the average of split edge's endpoint's positions.</p>
+        <p>In each figure below, the edge that is shown as swapped in the next figure is highlighted in white.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p4/1.png"/>
+                <figcaption><code>(Fig. 7.1)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/2.png"/>
+                <figcaption><code>(Fig. 7.2)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/3.png"/>
+                <figcaption><code>(Fig. 4.3)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p4/4.png"/>
+                <figcaption><code>(Fig. 6.4)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/5.png"/>
+                <figcaption><code>(Fig. 6.5)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/6.png"/>
+                <figcaption><code>(Fig. 6.6)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p4/7.png"/>
+                <figcaption><code>(Fig. 6.7)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/8.png"/>
+                <figcaption><code>(Fig. 6.8)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p4/9.png"/>
+                <figcaption><code>(Fig. 6.9)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <a id="part5"></a>
+    
+    <a id="part5"></a>
+    <h2>Part 5: Upsampling via Loop Subdivision</h2>
+        <p>The last image in the series of splits above <code>(Fig. 6.9)</code> should look rather suspicious. The vertex in the center is now surrounded by 5 smaller triangles of the same orientation and shape as the pre-split surrounding faces. As it turns out, we only need to flip the long edges (i.e. the edges connecting an old vertex and a new vertex created by <code>HalfedgeMesh::splitEdge</code>) in order to successfully subdivide all the original 5 faces around the vertex.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/12.png"/>
+                <figcaption><code>Tada...! (Fig. 7.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <h3>Loop Subdivision</h3>
+        <p>The Loop subdivision scheme (named so after its developer Charles Loop, not because it involves loops around the mesh) can be broken down into two steps:</p>
+        <ol>
+            <li>Replace each triangle with four smaller triangles by connecting the edge midpoints.</li>
+            <li>Update vertex positions; weighted as below.</li>
+        </ol>
+        <br>
+        <p>Inevitably, though, dividing each face into smaller parts will make the mesh more detailed and harder to traverse when it comes to updating the vertex positions. Thus the cleaner approach is to first iterate through all the vertices, calculate their new positions and store both that position and a boolean marking the vertex as "old" as member variables. We then iterate through all the edges and compute and store the the weighted positions of the vertices that will appear on those edges once they are split. </p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_vertices.jpg"/>
+                <figcaption><code>(Fig. 7.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>Edges are then split in any order. Since edges are added in the order they are input to the mesh's edge iterator, it is trivial to make sure we do not enter an infinite loop traversing and splitting the newly split messages (use an index counter or set the loop end check as the last old edge). Since <code>HalfedgeMesh::splitEdge</code> returns an iterator to the newly inserted vertex and we know that vertex's halfedge points along the edge that was split, we can use that halfedge to find the freshly created edges and mark them as new. This information is used in a second loop over edges, this time to flip any edge that connects an old to a new vertex.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_edges.jpg"/>
+                <figcaption><code>(Fig. 7.1)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The final step is to update all the <a class="scrollTo" href="p5_bugs">vertex positions</a>. Old vertices are corrected to the vector contained in the <code>vertex->newPosition</code> variable while new vertices are shifted to the vector contained in the <code>edge->newPosition</code> variable.</p>
+
+        <p>Each iteration of the subdivision scheme results in a not only smoother but also seemingly smaller mesh. Since vertex positions are interpolated by the positions of their surrounding vertices, pointiness gives way to softer and ultimately spherical corners.</p>
+        <div class="imageWrapper cramped">
+            <div class="images">
+                <img src="images/p5/p5_c0.png"/>
+                <figcaption>Cube, subdivided: 0<br><code>(Fig. 8.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c1.png"/>
+                <figcaption>Cube, subdivided: 1<br><code>(Fig. 8.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c2.png"/>
+                <figcaption>Cube, subdivided: 2<br><code>(Fig. 8.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c3.png"/>
+                <figcaption>Cube, subdivided: 3<br><code>(Fig. 8.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c4.png"/>
+                <figcaption>Cube, subdivided: 4<br><code>(Fig. 8.5)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c5.png"/>
+                <figcaption>Cube, subdivided: 5<br><code>(Fig. 8.6)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_c6.png"/>
+                <figcaption>Cube, subdivided: 5,<br>Gourard shading<br><code>(Fig. 8.6)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper cramped">
+            <div class="images">
+                <img src="images/p5/p5_ico0.png"/>
+                <figcaption>Icosahedron, subdivided: 0<br><code>(Fig. 9.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico1.png"/>
+                <figcaption>Icosahedron, subdivided: 1<br><code>(Fig. 9.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico2.png"/>
+                <figcaption>Icosahedron, subdivided: 2<br><code>(Fig. 9.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico3.png"/>
+                <figcaption>Icosahedron, subdivided: 3<br><code>(Fig. 9.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico4.png"/>
+                <figcaption>Icosahedron, subdivided: 4<br><code>(Fig. 9.5)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico5.png"/>
+                <figcaption>Icosahedron, subdivided: 5<br><code>(Fig. 9.6)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_ico6.png"/>
+                <figcaption>Icosahedron, subdivided: 5,<br>Gourard shading<br><code>(Fig. 9.6)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper cramped">
+            <div class="images">
+                <img src="images/p5/p5_t0.png"/>
+                <figcaption>Torus, subdivided: 0<br><code>(Fig. 10.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t1.png"/>
+                <figcaption>Torus, subdivided: 1<br><code>(Fig. 10.2)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t2.png"/>
+                <figcaption>Torus, subdivided: 2<br><code>(Fig. 10.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t3.png"/>
+                <figcaption>Torus, subdivided: 3<br><code>(Fig. 10.4)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t4.png"/>
+                <figcaption>Torus, subdivided: 4<br><code>(Fig. 10.5)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t5.png"/>
+                <figcaption>Torus, subdivided: 5<br><code>(Fig. 10.6)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_t6.png"/>
+                <figcaption>Torus, subdivided: 5,<br>Gourard shading <br><code>(Fig. 10.6)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>One way to maintain some of the sharpness is to pre-split certain faces. This is analogous to beveling edges in modeling tools like Maya. The closer vertices are to their neighbors pre-subdivision, the less their positions will shift as a result of interpolation. As seen in the figures below, the area with more pre-divided faces maintains its hexagonal shape while the outer edges, left as they were, became round.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_mesh.png"/>
+                <figcaption>Torus, subdivided: 2 <code>(Fig. 11.1)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_solid.png"/>
+                <figcaption>Torus, subdivided: 2, Gourard shading <code>(Fig. 11.2)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_moremesh.png"/>
+                <figcaption>Torus, pre-divided + subdivided: 0 <code>(Fig. 11.3)</code></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_moresolid.png"/>
+                <figcaption>Torus, pre-divided + subdivided: 2, Gourard shading <code>(Fig. 11.4)</code></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <h3>Symmetry</h3>
+        <br>
+        <div class="imageWrapper imageRight">
+            <div class="images">
+                <img src="images/p5/p5_asymm0.png"/>
+                <figcaption>Cube, subdivided: 0 <code>(Fig. 12.1)</code></figcaption>
+            </div>
+            <div class="imagesR">
+                <div class="imageWrapper3">
+                    <div class="images3">
+                        <img src="images/p5/p5_c0.png"/>
+                        <figcaption>Cube, subdivided: 0<br><code>(Fig. 8.1)</code></figcaption>
+                    </div>
+                    <div class="images3">
+                        <img src="images/p5/p5_c2.png"/>
+                        <figcaption>Cube, subdivided: 2<br><code>(Fig. 8.3)</code></figcaption>
+                    </div>
+                    <div class="images3">
+                        <img src="images/p5/p5_c6.png"/>
+                        <figcaption>Cube, subdivided: 5, <br>Gourard shading<br><code>(Fig. 8.5)</code></figcaption>
+                    </div>
+                </div>
+                <div style="clear:both"></div>
+                <p>Each of the cube's faces are split into two symmetric right triangles, but the edges overall are not symmetric around the entire cube. The dividing triangle edge goes from the bottom left to the top right corner of its square's face, some corners have 2 neighbors on the top and/or bottom face while the other corners only have 1. Therefore when new vertex positions are calculated for old vertices by taking the average of its neighbors, the results are assymmetric.</p>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <div class="imageWrapper imageRight">
+            <div class="images">
+                <img src="images/p5/p5_symm0.png"/>
+                <figcaption>Cube, pre-split subdivided: 0 <code>(Fig. 11.3)</code></figcaption>
+            </div>
+            <div class="imagesR">
+                <div class="imageWrapper3">
+                    <div class="images3">
+                        <img src="images/p5/p5_symm1.png"/>
+                        <figcaption>Cube, pre-split, subdivided: 0 <br><code>(Fig. 13.1)</code></figcaption>
+                    </div>
+                    <div class="images3">
+                        <img src="images/p5/p5_symm2.png"/>
+                        <figcaption>Cube, pre-split, subdivided: 2 <br><code>(Fig. 13.2)</code></figcaption>
+                    </div><div class="images3">
+                        <img src="images/p5/p5_symm3.png"/>
+                        <figcaption>Cube, pre-split, subdivided: 5, <br>Gourard shading <br><code>(Fig. 13.3)</code></figcaption>
+                    </div>
+                    <div style="clear:both"></div>
+                </div>
+                <p>When the cube's edges are pre-split so as to make all the faces and vertices evenly divided, the shape retains its symmetry upon subdivision.</p>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br>
+        <div style="clear:both"></div>
+        <a id="p5_bugs"></a>
+        <h3>Bug 1</h3>
+        <p>A vertex's new position is stored in <code>vertex->newPosition</code> for old vertices or <code>edge->newPosition</code> for new vertices. Trying to update the vertices all at once in the last loop will result in infinitely thin edges, since edges are flipped in the second-to-last loop and <code>HalfedgeMesh::flipEdge</code> does not guarantee that the edge's halfedge will remain the same. When the positions of old vertices are updated during the edge splitting loop, the bug is fixed.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_bug2b_teapot.png"/>
+                <figcaption>Utah Teapot, bugged vertex positions <code>(Fig. 13.1)</code></a></figcaption>
+            </div>
+            <div class="images">
+                <img src="images/p5/p5_bug2b_quadball.png"/>
+                <figcaption>Quadball, bugged vertex positions <code>(Fig. 13.2)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <h3>Bug 2</h3>
+        <p>Although each vertex thats part of the "original" mesh is marked as so during the first loop of the subdivision scheme, the same is not true for edges. Forgetting to reset each edge's <code>isNew</code> variable to false during the edge split loop will cause bugs to appear starting from the second iteration of subdivisions, since edges are not flipped when they should be.
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/p5/p5_bug3b.png"/>
+                <figcaption>Quadball, subdivided: 2, bugged edge flips <code>(Fig. 14.1)</code></a></figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+    
+    <a id="part6"></a>
+    <h2>Part 6: Fun with Shaders</h2>
+        <p>* All shaders written in GLSL</p>
+        <h3> Phong Shading </h3>
+        <p>Also called Phong interpolation or normal-vector interpolation shading, this technique was developed in 1973 by computer graphics researcher Bui Tuong Phong and has since become the standard baseline shading method for many rendering applications. Similar to Gourard shading, Phong shading starts off with one normal per vertex. The vertex normals are then interpolated across the polygon.</p>
+
+        <p>The calculated surface normal is then used in a reflection model, such as the Phong reflection model pictured below, to obtain the pixel's color. Phong shading is more computationally expensive than Gourard shading but is much better at rendering small specular highlights since color is calculated per pixel rather than per vertex.</p>
+            <div class="imageWrapper" id="add">
+                <div>
+                    <img src="images/p6/p6_ambient.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Ambient <br><code>(Fig. 15.1)</code></figcaption>
+                </div>
+                <h3>+</h3>
+                <div>
+                    <img src="images/p6/p6_diffuse.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Diffuse <br><code>(Fig. 15.2)</code></figcaption>
+                </div>
+                <h3>+</h3>
+                <div>
+                    <img src="images/p6/p6_specular.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Specular <br><code>(Fig. 15.3)</code></figcaption>
+                </div>
+                <h3>=</h3>
+                <div>
+                    <img src="images/p6/p6_phong1.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Phong Reflection Model <br><code>(Fig. 15.4)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+        <h3>Environment Mapping </h3>
+            <br>
+            <div class="imageWrapper imageRight">
+                <div class="images">
+                    <img src="images/p6/envmap.png"/>
+                    <figcaption>Environment Map<code>(Fig. 16.1)</code></figcaption>
+                </div>
+                <div class="imageWrapper3">
+                    <div>
+                        <p>Environment mapping, also known as reflection mapping, calculates the angles of incidence and reflection off a surface and uses them to map to the correct texel in the environment map. Although this method is much faster than the classic ray tracing approach of following each ray's optical path, it is also much less realistic because of it relies on two assumptions that are rarely satisfied:</p>
+                        <ul>
+                            <li><p>All light reflected by the object's surface comes from an infinite distance.</p></li>
+                            <li><p>The object is convex. This leads to no self-interreflections, such as the handle not being reflected by the teapot's body in <code>Fig. 17.2</code>.</p></li>
+                        </ul>
+                        <p><code>Fig. 16.1</code> is the map reflected on the teapots below.</p>
+                    </div>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/p6_env1.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Environment Map Reflection<br><code>(Fig. 17.1)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p6/p6_env2.png"/>
+                    <figcaption>Teapot (Bezier), Shading: Environment Map Reflection<br><code>(Fig. 17.2)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+        <h3>RGB Shading</h3>
+            <p>In GLSL, varying parameters set in the vertex shader are interpolated in the fragment shader. This is clear in <code>Fig. 18.1</code>, where setting <code>gl_FragColor</code> to the normalized vertex position vector results in the famous RGB cube. Replacing the vertex vector with the normal vector creates a shader that shows the surface normals encoded as RGB values.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/vertex.png"/>
+                    <figcaption>Cube, Shading: Vertices <code>(Fig. 18.1)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p6/normals.png"/>
+                    <figcaption>Quadball, Shading: Normal <code>(Fig. 18.2)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+        <h3>Mandelbrot Fractal Shader</h3>
+            <p>The <a href="http://mathworld.wolfram.com/MandelbrotSet.html">Mandelbrot set</a> refers to the set of all complex numbers <em>C</em> for which the sequence defined by the iteration</p>
+            <p align="middle"><em>Z<sub>n+1</sub> = Z<sub>n</sub><sup>2</sup> + C</em></p>
+            <p align="middle"><em> Z<sub>0</sub> = C </em></p>
+            <p>is bounded (i.e. there is a number <em>B</em> such that the absolute value of <em>z<sub>n</sub> is less than B </em> for all <em>n</em>).</p>
+            <p>Passing in the <em>(x, y)</em> coordinates of the vertex position and coloring each fragment based on how many iterations were run allows for the creation of some simple but quite pretty shaders. Capping the maximum number of iterations to a lower number leads to a loss of detail (see <code>Fig. 19.4</code>). In the figures below, Phong shading was added in a scaled down form in order to accentuate the objects' spherical shapes.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/green.png"/>
+                    <figcaption>Quadball, Shading: Mandelbrot Green-Black <code>(Fig. 19.1)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p6/red.png"/>
+                    <figcaption>Quadball, Shading: Mandelbrot Yellow-Red-Black<code>(Fig. 19.2)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/blue.png"/>
+                    <figcaption>Quadball, Shading: Mandelbrot Gold-Blue-Brown<code>(Fig. 19.3)</code></figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/p6/rainbow.png"/>
+                    <figcaption>Quadball, Shading: Mandelbrot Rainbow<code>(Fig. 19.4)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+        <h3>Toon Shading</h3>
+            <p>Calculating the intensity of the light source at a point by taking the dot product of the light vector and the surface normal, and then specifying a color for each range of intensities (brighter for more intense, darker for less), creates a stylized cartoon-ish shading effect.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/toon.png"/>
+                    <figcaption>Utah Teapot, Shading: Toon <code>(Fig. 20.1)</code></figcaption>
+                </div>
+            </div>
+        <br>
+        <h3><a href="http://adrianboeing.blogspot.com/2011/02/ripple-effect-in-webgl.html">Ripple Shading</a></h3>
+            <p>The ripple effect comes from evaluating the 2D version of the <em>sinc</em> function, and then adding a factor of time into the <em>sin</em> term to generate the repeating pulse. Time is saved as a uniform variable and incremented each time the figure is redrawn.</p> 
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/p6/base.png"/>
+                    <figcaption>Base Texture for Ripple Shader <code>(Fig. 21.1)</code></figcaption>
+                </div>
+                <div class="images">
+                    <video width="520" height="370" controls>
+                        <source src="images/p6/ripples.mov"/>
+                        Your browser does not support the video tag.
+                    </video>
+                    <figcaption>Cube, Shader: Ripple <code>(Fig. 21.2)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+        <h3><a href="https://www.shadertoy.com/view/XtXGD4">Checkerboard Shading</a></h3>
+            <p>Taking the dot product of the vertex position vector allows us to control the color by radius. Using the value of a time modulated sinusoid as an offset when calculating the radii of two circles, we can then <code>xor</code> the mod of those radii to create an animated checkberboard effect.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <video width="520" height="370" controls>
+                        <source src="images/p6/xor.mov"/>
+                        Your browser does not support the video tag.
+                    </video>
+                    <figcaption>Quadball, Shader: Checkerboard <code>(Fig. 22.1)</code></figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+        <br>
+</div>
+<a href="#" class="back-to-top">Back to Top></a>
+<script type="text/javascript" src="../../scripts/screen.js"></script>
+</body>
+</html>
+
+
+
+

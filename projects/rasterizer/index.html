@@ -1,0 +1,492 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Rasterizer</title>
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/184.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body>
+<div class="header">
+    <div class="info">
+        <h1>Project 1: Rasterizer</h1>
+        <br>
+        <p>Vector graphics renderer in C++ and OpenGL</p>
+        <p>February 2016</p>
+    </div>
+</div>
+<div class="content">
+    <h2>Navigation</h2>
+        <ol id="toc">
+            <li> <a href="#part1">Rasterizing Lines</a></li>
+            <li> <a href="#part2">Rastierzing Single-Color Triangles</a></li>
+            <li> <a href="#part3">Antialiasing Triangles</a></li>
+            <li> <a href="#part4">Transforms</a></li>
+            <li> <a href="#part5">Barycentric Coordinates</a></li>
+            <li> <a href="#part6">Pixel Sampling for Texture Mapping</a></li>
+            <li> <a href="#part7">Level Sampling for Mipmaps for Texture Mapping</a></li>
+        </ol>
+    <h2 id="part1">Part 1: Rasterizing Lines</h2>
+        <p><code>DrawRend::rasterize_line</code> uses the Bresenham line-drawing algorithm to draw lines pixel by pixel. At its very basics, after drawing a point (x, y) on a line, there are only two options as to where to plot the next point:</p>
+        <ol>
+            <li>incremented by one on the driving axis;</li>
+            <li>incremented by one on both the driving axis and passive axis.</li>
+        </ol>
+        <p>The driving axis refers to the axis with greater magnitude of change between the start and end points; the passive axis refers to the axis with less magnitude of change. For example, when plotting a line with a slope (&Delta; y / &Delta;x) of 1.5, the y-axis is driving and the x-axis is passive.</p>
+        <p>The validity of the original statement can be seen in the rasterization of basic/test2.svg, which utilizes lines radiating from the center and has slopes ranging from completely horizontal to completely vertical. The magnitude of the slope determines how often the coordinate plotting along the passive-axis is incremented.</p>
+        <br>
+        <br>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/lines.png"/>
+                <figcaption>(basic/test2.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p><br><br></p>
+        <p>Knowing the slope of the line in addition to the amount of accumulating error, the algorithm determines which of the two points to plot. Usually it will be the first choice. With each point that is drawn straight along the driving axis, however, the missing change along the passive axis is added to the error variable <code>e</code>. When the magnitude of <code>e</code> &ge; 0.5, the algorithm moves one pixel along the passive axis and resets <code>e</code>.</p>
+
+        <p>Most resources on the Breshenham line-drawing algorithm online only cover lines in the first octant (i.e. lines that move left to right and have a slope &le; 1). Thankfully, it can fairly simply be expanded to cover all lines.</p>
+
+        <p>The adapations are detailed in the following table.
+            <div align="center">
+                <table>
+                    <tr>
+                        <th class="leftmost"> Missing Functionality</th>
+                        <th> Solution </th>
+                    </tr>
+                    <tr>
+                        <td> <p><br>Lines moving from right to left <br></p></td>
+                        <td> <p><br>Swap start and end points.</p><p> </p> </td>
+                    </tr>
+                    <tr>
+                        <td> <p>Lines with slopes &ge; 1 </p></td>
+                        <td> <p>Switch the driving axis.</p><p> In the first octant, errors accumulating along the y-axis were tracked and written back as the code moved along the x-axis. For slopes &ge; 1, the code should move along the y-axis and keep track of errors accumulating on the x-axis.</p>
+                </table>
+            </div>
+        </p>
+        <br>
+        <br>
+
+    <h2 id="part2">Part 2: Rasterizing Single-Color Triangles</h2>
+        <p>Triangle rasterization was preformed by looping through pixels in the perceivable range of the triangle, computing their barycentric <code>alpha, beta</code> and <code>gamma</code> values and drawing the pixel into the framebuffer if all three values were &ge; 0, indicating they were "inside" all three edges of the triangle.</p>
+        <p>The following table details various optimizations made to speed up this process.</p>
+        <div align="left">
+            <table>
+                <tr>
+                    <th class="leftmost">Optimization</th>
+                    <th>Description</th>
+                    <th>Rasterization time (milliseconds)*</th>
+                    <th>Improvement Factor (bounding box time / time)*</th>
+                </tr>
+                <tr>
+                    <td>No optimization (bounding box rasterization)</td>
+                    <td>Starting from the corner (minimum x, minimum y), check every point in the box up the corner (maximum x, maximum y) against the edge test. </td>
+                    <td class="num">18.841</td>
+                    <td class="num">1.00</td>
+                <tr>
+                    <td>Pre-calculated factors </td>
+                    <td>Still check every point in the bounding box, but pre-calculate factors of the barycentric coordinate equations that are independent of x and y. </td>
+                    <td class="num">12.317</td>
+                    <td class="num">1.53</td>
+                </tr>
+                <tr>
+                    <td>Incremental barycentric coordinate calculations</td>
+                    <td>Further reduce calculation of the alpha and beta components of a point's barycentric coordinates into two additions per x iteration and two additions per y iteration. </td>
+                    <td class="num">11.312</td>
+                    <td class="num">1.67</td>
+                </tr>
+                <tr>
+                    <td>Line scanning</td>
+                    <td><p>After ordering points to find the relative y-positions of each point, divide the triangle into two smaller ones: a triangle with a flat top edge and a triangle with a flat bottom edge. Starting at the point opposite the flat edge, rasterize lines from the left edge to the right edge of the triangle, incrementing the end points by the slope of the triangle edges after each loop iteration.</p><p>This optimization samples about half the number of points as the above implementations and is thus a lot faster. For reasons detailed below, however, it was abandoned for a more reliable implementation.</td>
+                    <td class="num">8.805</td>
+                    <td class="num">2.14</td>
+                </tr>
+                <tr>
+                    <td>Early exit</td>
+                    <td><p>Kept track of whether the triangle had been entered or exited in an x-loop. If it had been entered <em> and </em> exited, broke out of the current x-loop early.</p>
+                    <p>I thought this method would be an improvement, because it tested less points, but it actually took slightly longer than the version of this function without early exit. This is most likely due to the extra overheard of managing and checking two boolean valaues.</p>
+                    <td class="num">12.078</td>
+                    <td class="num">1.56</td>
+            </table>
+            <p>*timed on basic/test3.svg.</p>
+        </div>
+        <h3> Bugs: Line Scanner Rasterization </h3>
+            <p>While this method was nearly twice as fast as the bounding box method, the edge cases, quite literally, were too numerous to handle. Since each triangle was divided in half, the dividing edge was drawn twice, which would be troublesome to deal with in semi-transparent triangles. There were also issues with certain edges not being drawn for unknown reasons, presumably related to rounding floats. Generating barycentric coordinates also required many lines more of code, since coordinates had to be calculated based on the original triangle's vertices. Points also had to be reoriented counter-clockwise after being sorted in descending order in order to properly divide the triangle. This led to multiple bugs, depicted below.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/lineScanner.png" />
+                    <figcaption>Line Scanner Rasterization (basic/test3.svg)</figcaption>
+                </div>
+                <div class="images">
+                    <img src="images/lineScannerColor.png"/>
+                    <figcaption>Line Scanner Rasterization (basic/test7.svg)</figcaption>
+                </div>
+            </div>
+            <div style="clear:both"></div>
+            <p>Ultimately, the most elegant (if not the fastest) solution appeared to be bounding box rasterization with barycentric coordinate calculation reduced to pre-calculations and then a few additions. This ensured that all points within the triangle were checked and drawn in a relatively reliable manner. A bug where a singular point in basic/test3.svg was not being drawn was solved by increasing the margin for which points were considered on the "inside" of an edge to <code>0.00005</code>. The scale of this admittedly hackish solution was large enough to include the troublesome point and small enough to not visibly affect the other triangles.</p>
+            <div class="imageWrapper">
+                <div class="images">
+                    <img src="images/test4Tri.png"/>
+                    <figcaption>Incremental Barycentric Coordinate Rasterization (basic/test4.svg)</figcaption>
+                </div>
+                <div style="clear:both"></div>
+            </div>
+
+    <h2 id="part3">Part 3: Antialiasing Triangles</h2>
+        <p>I implemented supersampling in order to antialias triangles, creating a new <code>sample_point</code> function to draw points directly onto a separate super-framebuffer and modifying <code>DrawRend::rasterize_point</code> to call <code>DrawRend::sample_point</code> the appropriate number of times. The superbuffer was larger than the framebuffer by a factor of the sample rate but otherwise identical, linearly storing each pixel's color information. The <code>DrawRend::resolve</code> function took the sample buffer and, if required, squashed its information first into an int vector <code>accumulatebuffer</code> and then back into the <code>framebuffer</code>. The intermediary buffer was needed because each pixel's rgba information, which is originally stored as a value of type <code>char</code> ranging from 0 - 255 had to be added with the corresponding information in its surrounding pixels. The value would overflow if added directly into a <code>char</code> vector. I also declared a new variable <code>scalar</code> which equals the square root of the sample rate because that value was required in every function dealing directly with pixels and would have had to be calculated multiple times otherwise.</p>
+
+        <p>The <code>resolve</code> function iterates through all the pixels in the superbuffer and accumulates into the framebuffer the information from the correct number of pixels, proportional to the sample rate, to the left and below it.</p>
+
+        <p> The code to loop through the buffers, in its most intuitive form, looks like this: 
+        <pre class="prettyprint">
+            // all indices are multiplied by 4 to account for each pixel spanning 4 bytes of information (r, g, b, a)
+
+            for (int y = 0; y &lt; height; y++) {
+                for (int x = 0; x &lt; width; x++) {
+                    int *a = &accumulatebuffer[0] + 4 * (x + (y * width));
+                    for (int i = 0; i &lt; scalar; i++) {
+                        int sy = (y * scalar) + i;
+                        for (int j = 0; j &lt; scalar; j++) {
+                            int sx = (x * scalar) + j;
+                            unsigned char *s = &samplebuffer[0] + 4 * (sx + (sy * width * scalar));
+                            a[0] += s[0];
+                            a[1] += s[1];
+                            a[2] += s[2];
+                            a[3] += s[3];
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i &lt; size; i += 1) {
+                framebuffer[i]     = (uint8_t) (accumulatebuffer[i] / sample_rate);
+            }
+        </pre>
+        <p>My first optimization was to unroll the second loop, since I knew the vector's size would always be a multiple of 4. I then tried to make better use of cache locality by iterating through consecutive indices instead of jumping across rows in the first loop. To do this I changed the outer x and y loops to go through the larger <code>samplebuffer</code> instead of the smaller <code>accumulatebuffer</code> and introduced several new variables to keep count of when to increment the latter's index. I also reduced the index calculations into a single addition per iteration, getting rid of potentially large multiplications. These produced some modest improvements on rasterization time, with predictably greater differences while rasterizing at higher sample rates.</p>
+        <pre class="prettyprint">
+
+            int xFrame, iFrame;
+            int yFrame = 0,
+                iSample = 0,
+                xCount = 0,
+                yCount = 0;
+            int scaledBitWidth = bitWidth * scalar;
+
+            for (int y = 0; y < height * scalar; y++) {
+                xFrame = 0;
+                iFrame = yFrame;
+                for (int s = 0; s < width * scalar; s++) {
+                    accumulatebuffer[iFrame]     += samplebuffer[iSample];
+                    accumulatebuffer[iFrame + 1] += samplebuffer[iSample + 1];
+                    accumulatebuffer[iFrame + 2] += samplebuffer[iSample + 2];
+                    accumulatebuffer[iFrame + 3] += samplebuffer[iSample + 3];
+
+                    iSample += 4;
+                    xCount++;
+                    if (xCount == scalar) {
+                        xCount = 0;
+                        iFrame += 4;
+                    }
+                }
+
+                yCount++;
+                if (yCount == scalar) {
+                    yCount = 0;
+                    yFrame += bitWidth;
+                }
+            }
+
+            for (int i = 0; i < size; i += 4) {
+                framebuffer[i]     = (uint8_t) (accumulatebuffer[i] / sample_rate);
+                framebuffer[i + 1] = (uint8_t) (accumulatebuffer[i + 1] / sample_rate);
+                framebuffer[i + 2] = (uint8_t) (accumulatebuffer[i + 2] / sample_rate);
+                framebuffer[i + 3] = (uint8_t) (accumulatebuffer[i + 3] / sample_rate);
+            }
+        </pre>
+        
+        <div>
+            <table>
+                <tr>
+                    <th>Sample Rate (samples / pixel)</th>
+                    <th>Original Time (milliseconds)*</th>
+                    <th>Optimized Time (milliseconds)*</th>
+                    <th>Improvement Factor (original / optimized) </th>
+                </tr>
+                <tr>
+                    <td class="num">4</td>
+                    <td class="num">25.580</td>
+                    <td class="num">25.523</td>
+                    <td class="num">1.002</td>
+                </tr>
+                <tr>
+                    <td class="num">9</td>
+                    <td class="num">59.287</td>
+                    <td class="num">50.175</td>
+                    <td class="num">1.182</td>
+                </tr>
+                <tr>
+                    <td class="num">16</td>
+                    <td class="num">85.519</td>
+                    <td class="num">80.698</td>
+                    <td class="num">1.060</td>
+                </tr>
+            </table>
+            <p>*timed on basic/test3.svg.</p>
+        </div>
+        <p>Supersampling visibly improved the jaggedness of triangle edges by smoothing the transitions between colors. This was particularly noticeable on skinny points, as seen below.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/alias1.png"/>
+                <figcaption align="middle">Sample Rate: 1 (basic/test4.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/alias4.png"/>
+                <figcaption align="middle">Sample Rate: 4 (basic/test4.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/alias16.png"/>
+                <figcaption align="middle">Sample Rate: 16 (basic/test4.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+
+        <h3>Bugs: Indexing into the Super Sample Buffer</h3>
+        <p>My first attempts at resolving the <code>samplebuffer</code> were fairly inaccurate. The most frustrating bug caused images to be duplicated and the lower half of the canvas to be blank. The number of repeated images increased proportionally to the sample_rate so I knew I was missing a factor of <code>sqrt(sample_rate)</code> somewhere, but it was hard to pinpoint exactly where. </p> 
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/indexError.png"/>
+                <figcaption align="middle">basic/test3.svg</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The problem was forgetting to multiply the width by <code>sqrt(sample_rate)</code> when indexing into the <code>samplebuffer</code>, both in <code>sample_point</code> and in <code>resolve</code>. Only spanning two lines of code, this bug was proof that even seemingly small errors while indexing could produce largely inaccurate rasterizations.</p> 
+
+    <h2 id="part4">Part 4: Transforms</h2>
+        <p>The math required to apply transformations was already fairly complete; all that needed to be done in this section was to write matrices to represent affine transformations. Some small confusions were that while matrix transformations are preformed from right to left, the transforms written in svg files are applied left to right. In addition, the coordinate system's orgin is in the top-left corner and the positive y-axis extends downwards. This led to some unexpected behavior until I modified the order of transforms in the SVG files.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/transform1.png" />
+                <figcaption>Original</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/transform2.png"/>
+                <figcaption>Rotated 15˚ counterclockwise</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/transform3.png"/>
+                <figcaption>Translated 50 pixels on x-axis, <br>30 pixels on y-axis</figcaption>
+            </div>
+        </div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/transform4.png"/>
+                <figcaption>Scaled 50% horizontally, <br>130% vertically</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/transform5.png"/>
+                <figcaption>Rotated 30˚ clockwise</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+
+    <h2 id="part5">Part 5: Barycentric Coordinates</h2>
+        <p>Barycentric coordinates can be thought of like a three-way tug of war between the vertices of a triangle, where the vertices' relative "strengths" (more commonly referred to as weight), determines to what extent it affects point <code>p</code> inside the triangle. This is depicted in the triangles below. Interpolation with barycentric coordinates (and sufficiently frequent sampling) allows for smooth transitions between weights.</p>
+
+        <p> (Fun fact: While we're taught that the three primary colors red, yellow and blue can be combined into any other color, any kindergartener who has crayons can tell you that's a lie. Cyan, magenta and yellow will produce a more visually appealing blend of colors.)</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/rgbTri.png"/>
+                <figcaption>Red, green, and blue vertices</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/rybTri.png">
+                <figcaption>Red, yellow and blue <br>(primary color) vertices</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/cmyTri.png">
+                <figcaption>Cyan, magenta, and yellow vertices</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>For a more mathematical explanation, in a triangle with values <code>V_a, V_b, V_c</code> at its vertices, the value of point <code> p =  &alpha;V_a + &beta;V_b + &gamma;V_c.</code> The areas of the subtriangles formed with <code>p</code> are proportional to &alpha;, &beta; and &gamma;. In this implementation the coordinates are normalized by the area of the full triangle, meaning &alpha; + &beta; + &gamma; = 1. The values <code>V_a, V_b, V_c</code> can represent various different attributes, from position to color.  
+        <pre class="prettyprint">
+        &lt;!-- SVG code for ColorTri objects. The colors attribute takes in 12 arguments consisting of r, g, b, a values for the
+        corresponding points.-->
+
+        &lt;colortri points="40 243 163 30 286 243" colors="1 0 1 1 1 1 0 1 0 1 1 1"/>
+        </pre>
+        </p>
+        <p>Having already debugged the calculation of barycentric coordinates in Part 2 (Rasterizing Triangles), adding functionality for color was trivial. Although the provided <code>ColorTri::color</code> only takes <code>Vector2D</code> objects as arguments, meaning only two of the three &alpha;, &beta;, &gamma; values can be passed in from <code>DrawRend</code>, the third weight can be calculated by subtracting the provided weights from 1.
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/colorWheel.png"/>
+                <figcaption>Color Wheel (basic/test7.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        </p>
+
+    <h2 id="part6">Part 6: Pixel Sampling for Texture Mapping</h2>
+        <p>The rasterizester interface allows the user to switch between two pixel sampling methods, nearest neighbor sampling and bilinear sampling, using the key "p". When a texturized object is specified in the SVG file, the <code>TexTri::color</code> function is passed the barycentric weights &alpha; and &beta; from <code>DrawRend</code>, computes &gamma;, and uses those values to compute the <code>u, v</code> coordinates of that point. Functions in <code>Texture</code> multiply the <code>u, v</code> by the selected texture map's width and height, respectively, to produce the correct index used to sample the texture map.</p>
+        <ul>
+            <li><h4>Nearest Neighbor Sampling:</h4>
+                <p>Round the scaled <code>u, v</code> coordinates to the find nearest valid index in the texture map. The value(s) given back up to <code>DrawRend</code> remain exactly the same as the ones found in the texture map.</p>
+            </li>
+            <li><h4>Bilinear Sampling:</h4>
+                <p>Find the four nearest neighbors by rounding the scaled <code>u, v</code> coordinates both up and down. The weighted average of each neighbor's values are then computed and used as the requested pixel's values. The closer a neighbor is to the origin <code>u, v</code> coordinates, the stronger its effect on the output value. Computing output through bilinear interpolation results in much smoother edges.
+            </li>
+        </ul>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/nearestTri.png" />
+                <figcaption class="moveIt">Pixel: nearest, Sample Rate: 1</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/bilinearTri.png"/>
+                <figcaption class="moveIt">Pixel: bilinear, Sample Rate: 1</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The advantages of bilinear over nearest neighbor sampling is also clear when looking at how the longitude and latitude lines are drawn in the warped map below. Since the lines are very skinny (only one pixel wide), nearest neighor sampling often completely misses the pixels containing white values and draws blue pixels instead. Bilinear sampling looks at a wider range of nearby pixels and therefore correctly calculates a white color more often. </p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/nearest.png" />
+                <figcaption class="moveIt">Pixel: nearest, Sample Rate: 1 (texmap/test1.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/bilinear.png"/>
+                <figcaption class="moveIt">Pixel: bilinear, Sample Rate: 1 (texmap/test1.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        
+        <p>At higher sampling rates the difference is not so visible. When super sampling, the rasterizester takes multiple samples per pixel and then blends them together. Thus, even if the white line spans only one pixel wide, nearest neighbor sampling is fairly accurate. The only discernible difference between the images below is the smoother fading of color from white to blue.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/nearest16.png" />
+                <figcaption class="moveIt">Pixel: nearest, Sample Rate: 16 (texmap/test1.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/bilinear16.png"/>
+                <figcaption class="moveIt">Pixel: bilinear, Sample Rate: 16 (texmap/test1.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div> 
+        </div>
+        <h3>Bugs: RGBA Calculation</h3>
+        <p>Several people including myself faced the bug where the RGBA values colors were not being calculated correctly. This resulted in some colors being either completely off or rainbow noise appearing, and while appearing in nearest sampling was worse with bilinear sampling.</p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/map255.png"/>
+                <figcaption>Pixel: nearest (texmap/test1.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/nearest255.png" />
+                <figcaption>Pixel: nearest (texmap/test6.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/bilinear255.png"/>
+                <figcaption>Pixel: bilinear (texmap/test6.svg)</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The noise was particularly severe in the rasterization of texmap/test6.svg (Berkeley seal), but the majority of colors still appeared correct in the rasterization of texmap/test1.svg. This meant the bug was a bit confusing to diagnose, since it was not instantly clear whether the issue was with indexing into the texture map or with color construction.</p>
+
+        <p>Dividing the texture map's values by 255.0 before constructing the output color was the solution.</p>
+    
+    <h2 id="part7">Part 7: Level Sampling with Mipmaps for Texture Mapping</h2>
+        <p>While the pixel sampling options allow for relatively accurate rasterization of textures, high resolution textures spread over small areas (too many texels per pixel) can cause aliasing, while low resolution textures spread over larger areas (not enough texels) can cause blurring. The more accurate sampling techniques will account for this by using mipmaps.</p>
+
+        <p>The letters "mip" in mipmap are an acronym for the Latin phrase <em>multum in parvo</em>, which means "much in little." Mipmaps are a precalculated sequence of the same textures at gradually changing resolutions, with the lowest resolution at level 0. The process is, essentially, "filtering before sampling" for textures. By mapping only one to a few texels to each pixel, the rasterization is antialiased. </p>
+
+        <p>Users can use the key "l" to switch through the following level sampling methods:
+        <ul>
+            <li><h4>Zero Level:</h4>
+                <p>Uses the lowest resolution texture map for all samples.</p>
+            <li><h4>Nearest Level:</h4>
+                <p>Calculates the change <code>u, v</code> coordinates after moving one pixel along the x-axis and the same for along the y-axis, then finds the larger of the two vectors representing those changes. This value is proportional to the screen sampling rate at that point. The algorithm can then normalize the value and take log base 2 in order to find the mipmap level. That level is then rounded to the nearest integer in order to find the closest matching mipmap.</p>
+            <li><h4>Trilinear:</h4>
+                <p>Finds the screen sampling rate at a point using the same calculations as above, but instead of sampling from just one level, takes bilinear samples from maps at both adjacent levels. Those two values are then interpolated once again, this time weighed by how close their originating mipmap levels are to the unrounded level.</p>
+        </ul>
+        <br><br>
+        <h3>Level Sampling Comparisons</h3>
+        <br><br>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/sealLevel0.png"/>
+                <figcaption>Level: 0 (texmap/test6.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/triLevel0.png"/>
+                <figcaption class="moveIt">Level: 0 </figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>The difference between zero and nearest level sampling is more visible on images where areas of concentrated details are more prevalent, like in the Berkeley seal rasterizations. The triangle pattern still has jagged edges with nearest level sampling. </p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/sealLeveln.png" />
+                <figcaption>Level: nearest (texmap/test6.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/triLeveln.png" />
+                <figcaption class="moveIt">Level: nearest </figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <p>Trilinear sampling accomplishes the smoothest rasterization of all three mode. In addition, the difference in smoothness between nearest level and trilinear sampling is a lot greater than the same between zero and level. This is due to how in trilinear sampling not only are mipmap levels interpolated between, but also the pixels are bilinearly interpolated within each level.  </p>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/sealLevelbi.png"/>
+                <figcaption>Level: bilinear (texmap/test6.svg)</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/triLevelbi.png"/>
+                <figcaption class="moveIt">Level: bilinear </figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+        <br><br>
+        <h3>Level &amp; Pixel Sampling Combination Comparison</h3>
+        <br>
+        <div>
+            <img src="images/metal.png" width="100%"/>
+        </div>
+        <p>Above is a clip of the original metal texture that was sampled from in the rasterizations below (same svg triangles as texmap/test1.svg, just a different texture).</p>
+        <p>Upgrading to bilinear pixel sampling from nearest pixel sampling while keeping the level sampling mode constant smoothes jagged lines across the entire shape. At level 0, however, there is still aliasing as the shape warps backward.</p>
+        <div style="clear:both"></div>
+        <div class="imageWrapper">
+            <div class="images">
+                <img src="images/l0nearest.png" />
+                <figcaption>Level: 0, Pixel: nearest</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/l0bilinear.png"/>
+                <figcaption>Level: 0, Pixel: bilinear</figcaption>
+            </div>
+        </div>
+        <div style="clear:both"></div>
+        <p>Moving from zero level to nearest level sampling greatly increases the accuracy of the texture mapping, even with pixel sampling kept in nearest neighbor mode. Nearest level sampling ensures that each pixel is mapped to its closest resolution texture map, compared to zero level sampling which uses the lowest resolution map for all pixels. Any remaining jaggedness is taken care of, finally, by using bilinear pixel sampling.</p>
+        <div class="imageWrapper"> 
+            <div class="images">
+                <img src="images/lnnearest.png"/>
+                <figcaption>Level: nearest, Pixel: nearest</figcaption>
+            </div>
+            <div class="images">
+                <img src="images/lnbilinear.png"/>
+                <figcaption>Level: nearest, Pixel: bilinear</figcaption>
+            </div>
+            <div style="clear:both"></div>
+        </div>
+</div>
+<a href="#" class="back-to-top">Back to Top></a>
+<script type="text/javascript" src="../../scripts/screen.js"></script>
+</body>
+</html>
+
+
+
+

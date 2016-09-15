@@ -1,0 +1,118 @@
+@charset "UTF-8";
+
+.header {
+    background: white;
+}
+
+.back-to-top {
+    background: #C3DDD6 url("../images/up-arrow.png") no-repeat center 43%;
+}
+
+a {
+    color: #615C60;
+}
+
+a:hover {
+    color: #f35100;
+}
+
+body {
+    background: white;
+}
+
+h1, h2, h3, h4 {
+    color: #474346;
+}
+
+h2 {
+    padding-top: 50px;
+    padding-bottom: 20px;
+    font-size: 30px;
+}
+
+p {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 16px;
+    color: black;
+    padding-bottom: 1em;
+}
+
+.content ul, ol {
+    padding-bottom: 1em;
+    margin-left: 4em;
+}
+
+li {
+    font-family: Calibri, Arial, sans-serif;
+}
+
+div.content {  
+    padding-top: 0px;  
+    padding-right: 100px;  
+    padding-bottom: 5em;  
+    padding-left: 100px;  
+}  
+
+table {
+    border: 1px solid black;
+    border-collapse: collapse;
+    margin-left: 2em;
+    margin-right: 2em;
+    margin-bottom: 1em;
+    padding: 8px;
+}
+
+th, td {
+    padding: 15px;
+    border: 1px solid black;
+}
+
+td {
+    font-family: Calibri, Arial, sans-serif;
+}
+
+.leftmost {
+   width: 150px;
+}
+
+code {
+    font-size: 0.9em;
+}
+
+figcaption {
+    font-family: Calibri, Arial, sans-serif;
+    text-align: center;
+    padding-bottom: 1em;
+}
+
+.moveIt {
+    margin-left: -25%;
+    margin-top: -2em;
+}
+
+.imageWrapper {
+    width: 900px;
+    margin-left: 12%;
+    display: flex;
+    justify-content: center;
+}
+
+.images {
+    padding-right: 50px;
+}
+
+.num {
+    text-align: center;
+}
+
+.prettyprint {
+  color: #000000;
+  background-color: #f8f8f8;
+  border: #c0c0c0 1px solid;
+  font-size: 10pt;
+  font-family: Consolas, Lucida Console, monospace;
+  margin-left: 2em;
+  margin-right: 2em;
+  margin-bottom: 1em;
+  padding: 8px;
+}
