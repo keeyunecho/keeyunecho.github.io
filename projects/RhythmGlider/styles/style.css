@@ -1,0 +1,50 @@
+html, body {
+    margin: 0px;
+    padding: 0px;
+    
+    height: 100%;
+    width: 100%; 
+}
+
+#menu {
+    text-align: center;
+    width: 500px;
+    background: #606060;
+    top: 50%;
+    left: 50%;
+}
+
+#my_song {
+    display: none;
+}
+
+.dg.main {
+	z-index: 999;
+}
+
+#ui-viewport #gl-viewport {
+	position: relative;
+}
+
+#viewport canvas {
+    position: absolute;
+    background-color: transparent;
+}
+
+#stats-output {
+    position: absolute;
+    z-index: 998;
+}
+
+#ui-layer {
+	/*z-index: 2;*/
+	position: absolute;
+	background-color: transparent;
+}
+
+.shader {
+	/* Hide the text. */
+    text-indent: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+}
