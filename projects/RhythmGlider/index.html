@@ -1,29 +1,49 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<meta charset="utf-8">
-	<title>Song of the (Galax)sea</title>
-	<link type="text/css" href="styles/style.css" rel="stylesheet" />
-	<script type="text/javascript" src="https://tonejs.github.io/CDN/latest/Tone.js"></script>
+    <meta charset="utf-8">
+    <title>Rhythm Glider</title>
 
-	<script src="lib/dat.gui.min.js"></script>
+    <link href='https://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+    <link type="text/css" href="styles/style.css" rel="stylesheet" />
+    
+    <script type="text/javascript" src="https://tonejs.github.io/CDN/latest/Tone.js"></script>
+
+    <script src="lib/dat.gui.min.js"></script>
     <script src="lib/jquery.min.js"></script>
     <script src="lib/three.min.js"></script>
     <script src="lib/ThreeAudio.min.js"></script>
     <script src="lib/requestAnimationFrame.js"></script>
 </head>
 <body>
-	<div id=menu>
-		<div class="MenuButtonWrapper">
-			<button id="PauseButton">Play</button>
-		</div>
-		<div class="MenuButtonWrapper">
-			<button id="getSongButton">Select Song</button>
-		</div>
-	</div>
-	<script src="scripts/main.js"></script>
-	<input type="file" id="my_song">
-	<!-- <canvas id="sky" width=800 height=600></canvas> -->
-	<noscript>Your browser does not support Javascript!</noscript>
+    <div class="menu" id="menuBack"></div> 
+    <div class="menu" id="menuContent">
+        <div class="MenuButtonWrapper"><div class="MenuButton" id="playSongButton">PLAY</div></div>
+        <div class="MenuButtonWrapper"><div class="MenuButton" id="getSongButton">SELECT SONG</div></div>
+    </div>
+
+    <div class="scoreboard" id="scoreboardBack"></div>
+    <div class="scoreboard" id="scoreboardContent">
+        <div class="ScoreboardTextWrapper"><div id="scoreEval">Too bad so sad</div></div>
+    </div>
+
+    <div id="points">Energy = 0</div>
+    <div id=countdown>3</div>
+    <div id="viewport"></div>
+    <div id="sky"></div>
+
+<!--    <div id="songDropdown" class="dropdown-content">
+        <a href="#">Link 1</a>
+        <a href="#">Link 2</a>
+        <a href="#">Link 3</a>
+     </div> -->
+
+    <script src="scripts/main.js"></script>
+    <script src="scripts/graphics.js"></script>
+    <script src="scripts/audio.js"></script>
+    <script src="scripts/mouse.js"></script>
+    <script src="scripts/player.js"></script>
+    <input type="file" id="my_song">
+    <noscript>Your browser does not support Javascript!</noscript>
 </body>
 </html>
