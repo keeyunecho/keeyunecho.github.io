@@ -25,7 +25,7 @@ var gameState = {
 	"velocity": 1.0,
 	"points": 0,
 	"minPoints": 100,
-	"song": 1,
+	"song": 0,
 	"endTime": 300,
 	"pseudoEndTime": 300,
 	"volumeSlope": 0
@@ -74,15 +74,16 @@ $(document).ready(function() {
 	function updateSong() {
 		$("#playSongButton").text("PLAY");
 		if (gameState.song === 0) {
-			$('#songTitle').text("'Anthem'");
+			$('#songTitle').text("'Anthem For The Wild Souls'");
 			planetColor = colors.yellow;
 			flotsamColor = colors.darkGrey;
 			jetsamColor = colors.turquoise;
-			flotsamThreshold = 400;
+			flotsamThreshold = 200;
 			jetsamThreshold = 300;
-			gameState.pseudoEndTime = 85;
-			gameState.endTime = 96;
+			gameState.pseudoEndTime = 78;
+			gameState.endTime = 88;
 			gameState.volumeSlope = 0.08;
+			gameState.minPoints = 500;
 		} else {
 			$('#songTitle').text("'That's Christmas To Me'");
 			planetColor = colors.white;
@@ -93,6 +94,7 @@ $(document).ready(function() {
 			gameState.pseudoEndTime = 60;
 			gameState.endTime = 74;
 			gameState.volumeSlope = 0.3;
+			gameState.minPoints = 200;
 		}
 
 		resetGame();

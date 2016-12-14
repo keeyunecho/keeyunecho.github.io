@@ -9,6 +9,7 @@ var flotsams = [], jetsams = [];
 var planet, planetExt;
 var space;
 var startAngle = 22.5;
+var cameraZPos = 150;
 var toBeCleared = [];
 
 var planetColor, flotsamColor, jetsamColor;
@@ -76,7 +77,7 @@ function createScene() {
 	scene.add(camera);
 
 	camera.position.x = 0;
-	camera.position.z = 150;
+	camera.position.z = cameraZPos;
 	camera.position.y = 25;
 
 	cameraCull = new THREE.PerspectiveCamera(
@@ -173,6 +174,7 @@ function createPlanet() {
 Flotsam = function(fVal) {
 	this.mesh = new THREE.Group();
 	this.type = "Flotsam";
+	// console.log('flots');
 
 	var geom = new THREE.BoxGeometry(10,10,10);
 	var mat = new THREE.MeshPhongMaterial({
@@ -355,7 +357,7 @@ function gameTick() {
 	var w = waveformValues[0] / 255;
 	if (gameState.startOffset < gameState.pseudoEndTime) {
 		var phi =  (startAngle * stepAngle) - (stepAngle * a);
-		if ( sf > flotsamThreshold) {
+		if ( sf > flotsamThreshold || w > 0.8) {
 			createFlotsam(fftAvg / 255, waveMax / 255, a, phi);
 		}
 		createJetsam(w, a, phi);
@@ -365,7 +367,7 @@ function gameTick() {
 		songPlayer.volume.value = songPlayer.volume.value + 0.005;
 	}
 	
-	planetExt.moveMountains(1 + ((w * 2) - 1) * 0.005);
+	planetExt.moveMountains(1 + ((w * 2) - 1) * 0.03);
 
 	gt += 1;
 }
