@@ -10,25 +10,35 @@ window.requestAnimationFrame = (function() {
         };
 })();
 
-var prevFftValues, fftValues, waveformValues;
+var songPlayer, noise, noiseVolume;
+var fft, waveForm, prevFftValues, fftValues, waveformValues;
 var clock;
-var acceleration = 1.005;
-var collisionPenalty = 10;
+var collisionPenalty = 10,
+	flotsamThreshold,
+	jetsamThreshold;
 var player;
 var gameState = {
 	"started": false,
 	"paused": false,
-	"over": false,
+	"died": false,
 	"startOffset": 0,
 	"velocity": 1.0,
 	"points": 0,
-	"minPoints": 300
+	"minPoints": 100,
+	"song": 1,
+	"endTime": 300,
+	"pseudoEndTime": 300,
+	"volumeSlope": 0
 };
 
-$(document).ready(function() {
+var songs = ["Anthem.m4a", "Thats_Christmas_To_Me.mp3"];
 
+$(document).ready(function() {
+	
 	initScene();
-	var startTimer = 1,
+	updateSong();
+	
+	var startTimer = 3,
 		currTimer = 0,
 		countdownTimerHandle,
 		requestAnimHandle,
@@ -39,20 +49,9 @@ $(document).ready(function() {
 		gameState.startOffset += 1;
 	}, 1);
 
-
-	//analyse the frequency/amplitude of the incoming signal	
-	var fft = new Tone.Analyser("fft", 32);
-
-	//get the waveform data for the audio
-	var waveform = new Tone.Analyser("waveform", 1024);
-
-	var songPlayer = new Tone.Player({
-		"url" : "http://www.kellykcho.com/projects/RhythmGlider/examples/Whistle.m4a",
-	}).fan(fft, waveform).toMaster();
-	fftValues = fft.analyse();
-
 	$('#getSongButton').click(function() {
-	    document.getElementById('my_song').click();
+	    gameState.song = gameState.song ^ 1;
+	    updateSong();
 	});
 
 	$('#playSongButton').click(function() {
@@ -63,22 +62,80 @@ $(document).ready(function() {
 	    }
 	});
 
+	$('#aboutButton').click(function() {
+		$(".aboutPage").fadeIn();
+	});
 
-	player = new Player();
-	createRocket();
-	
+	$('#backButton').click(function() {
+		$(".aboutPage").fadeOut();
+		$(".menu").fadeIn();
+	});
+
+	function updateSong() {
+		$("#playSongButton").text("PLAY");
+		if (gameState.song === 0) {
+			$('#songTitle').text("'Anthem'");
+			planetColor = colors.yellow;
+			flotsamColor = colors.darkGrey;
+			jetsamColor = colors.turquoise;
+			flotsamThreshold = 400;
+			jetsamThreshold = 300;
+			gameState.pseudoEndTime = 85;
+			gameState.endTime = 96;
+			gameState.volumeSlope = 0.08;
+		} else {
+			$('#songTitle').text("'That's Christmas To Me'");
+			planetColor = colors.white;
+			flotsamColor = colors.green;
+			jetsamColor = colors.red;
+			flotsamThreshold = 100;
+			jetsamThreshold = 0;
+			gameState.pseudoEndTime = 60;
+			gameState.endTime = 74;
+			gameState.volumeSlope = 0.3;
+		}
+
+		resetGame();
+		scene.remove(planet.mesh);
+		scene.remove(planetExt.mesh);
+		createPlanet();	
+		renderer.render(scene, camera);	
+
+		//analyse the frequency/amplitude of the incoming signal	
+		fft = new Tone.Analyser("fft", 32);
+
+		//get the waveform data for the audio
+		waveform = new Tone.Analyser("waveform", 1024);
+
+		songPlayer = new Tone.Player({
+			"url" : "http://www.kellykcho.com/projects/RhythmGlider/examples/" + songs[gameState.song],
+			"callback": ready()
+		}).fan(fft, waveform).toMaster();
+		fftValues = fft.analyse();
+	}
+
+	function ready() {
+		noise = new Tone.Noise("white");
+		noise.connect(Tone.Master);
+		$(".menu").fadeIn();
+	}
+
 	document.addEventListener('mousemove', function(event) {
 		player.mousePos.x = event.clientX;
 		player.mousePos.y = event.clientY;
 	}, false);
 
 	function startGame() {
-		gameState.started = true;
-		gameState.paused = false;
-		gameState.over = false;
-		gameState.startOffset = 0;
+		resetGame();
 		$(".menu").fadeOut();
 		startCountdown();
+	}
+
+	function resetGame() {
+		gameState.started = true;
+		gameState.died = false;
+		gameState.startOffset = 0;
+		gameState.points = 0;
 	}
 
 	function pauseGame() {
@@ -86,11 +143,15 @@ $(document).ready(function() {
 		window.clearInterval(slowAnimHandle);
 		window.clearInterval(accelHandle);
 		songPlayer.stop();
+		noise.stop();
 		clock.stop();
 		gameState.paused = true;
-		
-		$(".menu").fadeIn();
+
+		console.log(gameState.startOffset);
+
 		$("#playSongButton").text("UNPAUSE");
+		$(".menu").fadeIn();
+		
 	}
 
 	function unpauseGame() {
@@ -107,14 +168,24 @@ $(document).ready(function() {
 		$("#playSongButton").text("PLAY");
 	}
 
-	function endGame() {
-		gameState.over = true;
-		if (gameState.points < gameState.minPoints) {
-			$("#scoreEval").text("You couldn't escape the planet and eventually died of loneliness. Too bad.");
-		} else {
-			$("#scoreEval").text("Congratulations! You've escaped (and been engulfed by the darkness of deep outer space).");
+	function endGame(crashed) {
+		if (gameState.started) {
+			songPlayer.stop();
+			noise.stop();
+
+			gameState.started = false;
+			cancelAnimationFrame(requestAnimHandle);
+			// window.clearInterval(slowAnimHandle);
+			window.clearInterval(accelHandle);
+			if (crashed) {
+				$("#scoreEval").text("You crashed and died. Maybe reconsider your career as spaceship driver.");
+			} else if (gameState.points < gameState.minPoints) {
+				$("#scoreEval").text("You couldn't escape the planet and eventually died of loneliness. Too bad.");
+			} else {
+				$("#scoreEval").text("Congratulations! You've escaped (and been engulfed by the darkness of deep outer space).");
+			}
+			$(".scoreboard").fadeIn();
 		}
-		$(".scoreboard").fadeIn();
 	}
 
 	function startCountdown() {
@@ -130,9 +201,8 @@ $(document).ready(function() {
 			window.clearInterval(countdownTimerHandle);
 
 			songPlayer.start("+0.0", gameState.startOffset);
+			noise.start();
 			clock.start();
-			slowAnimHandle = window.setInterval(gameTick, 1000 / 10);
-			accelHandle = window.setInterval(accelerate, 1000 * 5);
 			playGame();
 		} else {
 			$("#countdown").text(currTimer);
@@ -149,46 +219,29 @@ $(document).ready(function() {
 	  }
 	});
 
-	function accelerate() {
-		gameState.velocity *= acceleration;
-		console.log(gameState.velocity);
-	}
 
 	function updatePoints() {
 		$("#points").text("Energy = " + gameState.points);
-	}
-
-	var gj = 0;
-	function gameTick() {
-		prevFftValues = fftValues.slice();
-		fftValues = fft.analyse();
-		fftAvg = calcAverage(fft);
-
-		waveformValues = waveform.analyse();
-		waveMax = Math.max(...waveformValues);
-		sf = calcDiff(prevFftValues, fftValues);
-		if ( sf > 500) {
-			createFlotsam(1.0, waveMax / 255, gameState.startOffset % maxFlotsam);
-		}
-		
-		var w = waveformValues[0] / 255;
-		createJetsam(w, gj % maxJetsam);
-		planetExt.moveMountains(1 + ((w * 2) - 1) * 0.005);
-		gj += 1;
-
-		if (gameState.startOffset > 5) {
-			deleteInvisible();
-		}
 	}
 
 	function playGame() {
 		requestAnimHandle = requestAnimationFrame(playGame);
 		updatePoints();
 
-		if (songPlayer.state == "stopped" && !gameState.paused) {
-			endGame();
-			cancelAnimationFrame(requestAnimHandle);
+		if (gameState.startOffset >= gameState.endTime) {
+			endGame(false);
 		}
+
+		if (gameState.died) {
+			endGame(true);
+		}
+
+		if (songPlayer.state == "stopped" && !gameState.paused) {
+			endGame(false);
+		}
+
+
+		noise.volume.value = -10 - 0.8 * ( gameState.volumeSlope * gameState.points);
 		render();
 	}
 });

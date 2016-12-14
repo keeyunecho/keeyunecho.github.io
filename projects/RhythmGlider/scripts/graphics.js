@@ -2,23 +2,25 @@ var canvasWidth, canvasHeight;
 var viewport;
 
 var canvas, context, renderer;
-var scene, aspectRatio, fieldOfView, nearPlane, farPlane;
-var frustum, cameraViewProjectionMatrix;
+var scene, camera, aspectRatio, fieldOfView, nearPlane, farPlane;
 
 var fftValues, waveformValues;
-var flotsams = [],
-	jetsams = [];
-var flotsamIDs = {},
-	jetsamIDs = {};
+var flotsams = [], jetsams = [];
 var planet, planetExt;
 var space;
+var startAngle = 22.5;
+var toBeCleared = [];
+
+var planetColor, flotsamColor, jetsamColor;
 
 var colors = {
 	"red": "#DB3340",
 	"yellow": "#E8B71A",
 	"cream": "#F7EAC8",
+	"white": '#ffffff',
 	"turquoise": "#1FDA9A",
 	"blue": "#28ABE3",
+	"green": "#1fad00",
 	"lightGrey": "#C6D5CD",
 	"darkGrey": "#5A6A62"
 };
@@ -46,6 +48,10 @@ function initScene() {
     createScene();
     createPlanet();
     createSpace();
+    // createFlotsam(1.0, 1.0, 0);
+
+    player = new Player();
+	createRocket();
 
     window.addEventListener('resize', resizeWindow, false);
 
@@ -73,8 +79,12 @@ function createScene() {
 	camera.position.z = 150;
 	camera.position.y = 25;
 
-	frustum = new THREE.Frustum();
-	cameraViewProjectionMatrix = new THREE.Matrix4();
+	cameraCull = new THREE.PerspectiveCamera(
+		fieldOfView,
+		aspectRatio,
+		nearPlane,
+		farPlane
+	);
 
 	createLights();
 }
@@ -113,7 +123,7 @@ Planet = function(color) {
 		emissive: color,
 		emissiveIntensity: 0.5,
 		transparent: true,
-		opacity: 0.1,
+		opacity: 0.8,
 		shading: THREE.FlatShading,
 	});
 
@@ -153,8 +163,8 @@ Planet = function(color) {
 
 
 function createPlanet() {
-	planet = new Planet(colors.yellow);
-	planetExt = new Planet(colors.yellow);
+	planet = new Planet(planetColor);
+	planetExt = new Planet(planetColor);
 	scene.add(planet.mesh);
 	scene.add(planetExt.mesh);
 }
@@ -166,8 +176,8 @@ Flotsam = function(fVal) {
 
 	var geom = new THREE.BoxGeometry(10,10,10);
 	var mat = new THREE.MeshPhongMaterial({
-		color: colors.darkGrey,
-		emissive: colors.lightGrey,
+		color: flotsamColor,
+		emissive: flotsamColor,
 		emissiveIntensity: 0.5,
 		transparent: true
 	});
@@ -198,13 +208,7 @@ Flotsam = function(fVal) {
 		this.mesh.add(m);
 	}
 
-	this.delete = function() {
-		while (this.mesh.children.length) {
-			this.mesh.remove(this.mesh.children[0]);
-		}
-	};
-
-	this.maxSteps = 200;
+	this.maxSteps = 150;
 	this.step = 0;
 	this.exploded = false;
 
@@ -225,35 +229,39 @@ Flotsam = function(fVal) {
 
 	this.loop = function() {
 		if (this.exploded) {
-			var children = this.mesh.children;
-			
-			for (var i = 0; i < children.length; i++) {
-				children[i].position.x += children[i].xd;
-				children[i].position.y += children[i].yd;
-				children[i].material.opacity -= this.opacityStep;
+			for (var i = 0; i < this.mesh.children.length; i++) {
+				this.mesh.children[i].position.x += this.mesh.children[i].xd;
+				this.mesh.children[i].position.y += this.mesh.children[i].yd;
+				this.mesh.children[i].material.opacity -= this.opacityStep;
 			}
 			this.step += 1;
 		}
-		if (this.step == this.maxSteps) {
-			this.exploded = false;
+
+		if (this.step > 100) {
+			this.delete();
 		}
+	};
+
+	this.delete = function() {
+		while (this.mesh.children.length) {
+			this.mesh.remove(this.mesh.children[0]);
+		}
+		planet.mesh.remove(this.mesh);
 	};
 };
 
-var maxFlotsam = 20;
-var stepAngleF = (Math.PI*2 / maxFlotsam);
-function createFlotsam(fVal, wVal, aVal) {
+
+var numAngles = 180;
+var stepAngle = (Math.PI*2 / numAngles);
+function createFlotsam(fVal, wVal, aVal, phi) {
 
 	var flotsam = new Flotsam(fVal);
-	flotsamIDs[flotsam.mesh.id] = flotsam;
- 
-	var phi =  stepAngleF - (stepAngleF * aVal);
-	var r = planet.radius + (100 * wVal) - 10;
 
-	// Convert polar coordinates (phi, distance) into Cartesian coordinates (x, y)
+	// console.log(fVal + "," + wVal);
+	var r = planet.radius + (150 * wVal) - 60;
+	
 	flotsam.mesh.position.y = Math.sin(phi)*r;
 	flotsam.mesh.position.x = Math.cos(phi)*r;
-
 
 	// Rotate mesh to align with planet edge
 	flotsam.mesh.rotation.z = phi + Math.PI/2;
@@ -265,25 +273,19 @@ function createFlotsam(fVal, wVal, aVal) {
 	flotsams.push(flotsam);
 }
 
-function updateFlotsams() {
-	for (var i = 0, len = flotsams.length; i < len; i++) {
-		flotsams[i].loop();
-	}
-}
-
 Jetsam = function() {
 	this.eaten = false;
 	this.type = "Jetsam";
+
 	var geom = new THREE.SphereGeometry(1,0);
 	var mat = new THREE.MeshPhongMaterial({
-		color: colors.turquoise,
-		emissive: colors.turquoise,
+		color: jetsamColor,
+		emissive: jetsamColor,
 		shininess: 100,
 		specular:0x111111,
 		shading:THREE.FlatShading,
 		transparent: true
 	});
-	geom.boundingSphere.radius *= 100;
 	this.mesh = new THREE.Mesh(geom,mat);
 
 	this.collide = function() {
@@ -293,67 +295,95 @@ Jetsam = function() {
 			this.mesh.material.opacity = 0.0;
 		}
 	};
+
+	// this.loop = function() {
+	// 	if (this.cleaned) {
+	// 		this.delete();
+	// 	}
+	// };
+
+	this.delete = function() {
+		planet.mesh.remove(this.mesh);
+	};
 };
 
-var maxJetsam = 180;
-var stepAngleJ = (Math.PI*2 / maxJetsam);
-function createJetsam(wVal, aVal) {
+function createJetsam(wVal, aVal, phi) {
 
 	var jetsam = new Jetsam();
-	jetsamIDs[jetsam.mesh.id] = jetsam;
 
-	var phi =  stepAngleJ - (stepAngleJ * aVal);
-	var r = planet.radius + (wVal * 30) + 10;
+	var r = Math.max(planet.radius + 2, planet.radius + (wVal * 90) -10);
+	var y = Math.sin(phi) * r;
+	var x = Math.cos(phi) * r;
 
-	jetsam.mesh.position.y = Math.sin(phi)*r;
-	jetsam.mesh.position.x = Math.cos(phi)*r;
+	jetsam.mesh.position.y = y;
+	jetsam.mesh.position.x = x;
+
 
 	planet.mesh.add(jetsam.mesh);
-	jetsams.push(jetsam);
-}
+	
 
-function deleteInvisible() {
-	camera.updateMatrixWorld(); // make sure the camera matrix is updated
-	camera.matrixWorldInverse.getInverse( camera.matrixWorld );
-	cameraViewProjectionMatrix.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
-	frustum.setFromMatrix( cameraViewProjectionMatrix );
-
-
-	if (flotsams.length > 0) {
-		var visible = false;
-		f = flotsams[0];
-		if (!f.exploded) {
-			for (var i = 0, n = f.mesh.children.length; i<n; i++) {
-				c = f.mesh.children[i];
-				visible = visible || frustum.intersectsObject(c);
-			}
-			if (!visible) {
-				f = flotsams.shift();
-				delete flotsamIDs[f.id];
-				f.delete();
-				scene.remove(f);
-			}
-		}
-	}
-
-	if (jetsams.length > 0) {
-		var j = jetsams[0].mesh;
-		if (!frustum.intersectsObject(j) || j.eaten) {
-			jetsams.shift();
-			j.parent.remove(j);
-		}
+	var pos = new THREE.Vector3();
+	pos.setFromMatrixPosition( jetsam.mesh.matrixWorld );
+	if (pos.x < -150) {
+		p.delete();
+		planet.mesh.rotation.z = 0;
+		gt = 0;
+	} else {
+		jetsams.push(jetsam);
 	}
 }
 
+
+function updateFlotsam() {
+	for (var i = 0; i < flotsams.length; i++) {
+		flotsams[i].loop();
+	}
+}
+
+var gt = 0;
+function gameTick() {
+
+	prevFftValues = fftValues.slice();
+	fftValues = fft.analyse();
+	fftAvg = calcAverage(fftValues);
+	scene.updateMatrixWorld();
+
+	waveformValues = waveform.analyse();
+	waveMax = Math.max(...waveformValues);
+	sf = calcDiff(prevFftValues, fftValues);
+	var a = gt % numAngles;
+	var w = waveformValues[0] / 255;
+	if (gameState.startOffset < gameState.pseudoEndTime) {
+		var phi =  (startAngle * stepAngle) - (stepAngle * a);
+		if ( sf > flotsamThreshold) {
+			createFlotsam(fftAvg / 255, waveMax / 255, a, phi);
+		}
+		createJetsam(w, a, phi);
+	}
+
+	if (noise.volume.value < (-50)) {
+		songPlayer.volume.value = songPlayer.volume.value + 0.005;
+	}
+	
+	planetExt.moveMountains(1 + ((w * 2) - 1) * 0.005);
+
+	gt += 1;
+}
+
+var rt = 0;
 function render() {
 	renderer.clear();
 
-	var v = 0.005 * gameState.velocity;
+	var v = 0.005;
 	planet.mesh.rotation.z += v;
 	planetExt.mesh.rotation.z += v;
+	rt += 1;
+
+	if (rt > 5) {
+		gameTick();
+		rt = 0;
+	}
 
 	player.update();
-	updateFlotsams();
-
 	renderer.render(scene, camera);
 }

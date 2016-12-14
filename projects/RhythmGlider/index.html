@@ -19,7 +19,8 @@
     <div class="menu" id="menuBack"></div> 
     <div class="menu" id="menuContent">
         <div class="MenuButtonWrapper"><div class="MenuButton" id="playSongButton">PLAY</div></div>
-        <div class="MenuButtonWrapper"><div class="MenuButton" id="getSongButton">SELECT SONG</div></div>
+        <div class="MenuButtonWrapper"><div class="MenuButton" id="getSongButton">SONG<br><span id="songTitle">Whistle"</span></div></div>
+        <div class="MenuButtonWrapper"><div class="MenuButton" id="aboutButton">About</div></div>
     </div>
 
     <div class="scoreboard" id="scoreboardBack"></div>
@@ -27,16 +28,24 @@
         <div class="ScoreboardTextWrapper"><div id="scoreEval">Too bad so sad</div></div>
     </div>
 
+    <div class="aboutPage" id="aboutBack"></div>
+    <div class="aboutPage" id="aboutContent">
+        <div class="AboutTextWrapper">
+            <div id="aboutInfo">
+                <h2>Rhythm Glider</h2>
+                <p>Oh no! While exploring the vast galaxy in your signal powered spaceship, you made a wrong turn and became trapped in a planet's gravity without enough energy to escape! Fortunately you received musical training from the specialists at M158 Academy, and have realized that the objects orbiting the planet are somehow linked to the song's frequency and waveform.</p>
+                <br>
+                <p>Use your mouse to move the spaceship up and down in order to absorb the waveform energy particles. Be careful of the debris!</p>
+            </div>
+        </div>
+        <div class="MenuButtonWrapper"><div class="MenuButton" id="backButton">Back</div></div>
+    </div>
+
+
     <div id="points">Energy = 0</div>
     <div id=countdown>3</div>
     <div id="viewport"></div>
     <div id="sky"></div>
-
-<!--    <div id="songDropdown" class="dropdown-content">
-        <a href="#">Link 1</a>
-        <a href="#">Link 2</a>
-        <a href="#">Link 3</a>
-     </div> -->
 
     <script src="scripts/main.js"></script>
     <script src="scripts/graphics.js"></script>

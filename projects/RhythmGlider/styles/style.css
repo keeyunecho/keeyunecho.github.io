@@ -7,7 +7,7 @@ html, body {
 }
 
 
-.menu, .scoreboard {
+.menu, .scoreboard, .aboutPage {
     text-align: center;
     width: 500px;
     
@@ -18,8 +18,9 @@ html, body {
     top: 50%;
     left: 50%;
     width: 50%;
-    height: 50%;
+    height: 70%;
     margin: -15% 0% 0% -25%;
+    display: none;
 }
 
 .scoreboard {
@@ -32,13 +33,13 @@ html, body {
     border-radius: 10px;
 }
 
-#scoreboardBack {
+#scoreboardBack, #aboutBack {
     background: #ffffff;
     border-radius: 10px;
 }
 
 .MenuButtonWrapper{
-    padding: 10px;
+    padding: 5px;
     margin-top: 40px;
     margin-left: 50%;
 }
@@ -68,9 +69,27 @@ html, body {
 .MenuButton:active {
 }
 
+#backButton {
+    margin-top: -50px;
+}
+
 .ScoreboardTextWrapper {
     margin-top: 25%;
     padding: 20px;
+}
+
+.AboutTextWrapper {
+    text-align: left;
+    padding: 20px;
+}
+
+#aboutInfo {
+    font-size: 14px;
+    padding: 20px;
+}
+
+#aboutInfo h2 {
+    text-align: center;
 }
 
 #scoreEval {

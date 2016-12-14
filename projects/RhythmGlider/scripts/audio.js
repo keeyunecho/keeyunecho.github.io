@@ -12,7 +12,7 @@ function calcAverage(values) {
 	for (var i = 0, len = values.length; i < len; i++) {
 		s += values[i];
 	}
-	return s;
+	return s / values.length;
 }
 
 function calcVariance(values) {
