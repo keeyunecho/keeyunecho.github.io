@@ -76,7 +76,7 @@ td {
 }
 
 code {
-    font-size: 0.9em;
+    font-size: 1em;
 }
 
 figcaption {
@@ -91,14 +91,15 @@ figcaption {
 }
 
 .imageWrapper {
-    width: 900px;
-    margin-left: 12%;
+    /*width: 100%;*/
+    /*margin-left: 12%;*/
     display: flex;
     justify-content: center;
 }
 
 .images {
-    padding-right: 50px;
+    padding-left: 25px;
+    padding-right: 25px;
 }
 
 .num {

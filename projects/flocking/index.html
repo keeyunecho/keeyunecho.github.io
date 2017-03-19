@@ -1,0 +1,89 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>Kelly Cho | Project-Flocking</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/screen.css">
+    <link rel="stylesheet" type="text/css" href="../../stylesheets/184.css">
+    <link href='https://fonts.googleapis.com/css?family=Cabin:400,700' rel='stylesheet' type='text/css'>
+    <link href='https://fonts.googleapis.com/css?family=Lato:400,700' rel='stylesheet' type='text/css'>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+
+<body>
+<div class="header">
+    <div class="info">
+        <h1>Schooling</h1>
+        <br>
+        <p>Like flocking, but with fish</p>
+        <p>March 2016</p>
+    </div>
+</div>
+
+<div class="content">
+
+    <p>This is a project done in collaboration with Emilee Chen.</p>
+    <ul>
+        <li><a href="https://github.com/emileechen/fish">Version 1 (UE4)</a></li>
+        <li><a href="https://github.com/emileechen/flocking">Version 2 (Processing)</a></li>
+    </ul>
+
+<h2> Overview </h2>
+    <p> Most, if not all, the academic research on flocking/schooling references the Boids model from Craig Reynolds' 1987 paper <a href="https://www.researchgate.net/publication/2797343_Flocks_Herds_and_Schools_A_Distributed_Behavioral_Model?el=1_x_8&enrichId=rgreq-78a280838469d2d19b3405b441e80e5e-XXX&enrichSource=Y292ZXJQYWdlOzIyNDAxMDg3NjtBUzoxMDI4OTY3NjI4ODQxMDBAMTQwMTU0MzkwODM2Ng">[link]</a>. This foundational model determines the next position of each fish is by combing at three steering behaviors: cohesion, alignment, and separation. Cohesion draws a fish to the average location of its neighbors. Alignment rotates the fish' forward direction to the average of that of its neighbors. Lastly, separation causes fish to not swim too close to others.</p>
+
+    <p>The paper we chose to build our project off of was 'Self-organized shapes and frontal density of fish schools' (Hemelrijk and Hildenbrandt, 2007) <a href="https://www.researchgate.net/profile/Charlotte_Hemelrijk/publication/224010876_Self-organized_shapes_and_frontal_density_of_fish_schools/links/00b49523c5ef7e2080000000.pdf">[link]</a>. This paper builds on top of the Boids model, taking into account factors that would effect steering behaviors in real fish schools, like a dynamic radii of perception for cohesion and a preferred "cruise speed" instead of constants like many previous papers used. The conclusion of the paper, as the title suggests, supports the hypothesis that the oblong shape and high frontal density of real schools of fish are a side-effect of each individual's coordination with fish within their neighborhood, just as the model describes.</p>
+
+<h2> Radii of Perception </h2>
+    <p> The three different steering behaviors all have a different maximum radius that neighbors have to be within to have an impact. These three zones overlap, but each behavior has a weighted impact on the final calculation. For example, a fish within the separation zone is also within the cohesion zone, but since the weight of separation is higher than that of cohesion, the fish will still act correctly. The cohesion radius is greatest, followed by the alignment radius and lastly the separation radius. </p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/blind_angles_before.png"/>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <br><br>
+    <h3> Density Depenent Radius </h3>
+    <p> Realistically, a fish' behavior should only be impacted by the positions and alignment of other fish it can actually perceive. While a static radius leads to fairly accurate schooling, in actuality a fish' radius of perception is limited by the density of fish nearby. For example, a fish densely surrounded by other fish can see less than a fish in a wide open area. Therefore the radius is calculated as a linear interpolation of the previous radius and a newly calculated density dependent radius.</p>
+
+    <pre class="prettyprint">
+    s = smoothness * &Delta;t;                                                            // Weight for interpolation
+    d = max_radius - (influence * num_neighbors(t));                                // Density dependent radius 
+    radius(t + &Delta;t) = max(min_radius, ((1 - s) * radius(t)) + (s * d));
+    </pre>
+
+    <p> The <code>smoothness</code> value determines how quickly the radius is allowed to change per calculation by prioritizing either the current radius or the calculated density dependent radius. The smaller the smoothness value, the smoother the change in radius. </p>
+    <p>The <code>influence</code> value determines how many neighbours it requires for the radius to constrict. The larger the influence value, the more quickly the radius reduces. If this value is too large, then the agents display a swirling behaviour since it effectively turns off alignment.</p>
+    <p> The paper suggests values for neither <code>influence</code> nor <code>smoothness</code>. It is also unclear whether this dynamic perception radius interpolation should be applied to only the cohesion radius (as is suggested in the explanation of the perception radius), or to both the alignment and cohesion radii (as both values are marked as adaptive in Table 1 of the paper). After testing several values, we settled on the values <code>0.5</code> for smoothness and <code>5</code> for influence. </p>
+    <p> For the sake of not having to loop through all the potential neighbouring agents twice, the recalculated perception radius is adjusted and saved to be used for the next time step.</p>
+
+    <h3> Blind Angles </h3>
+    <p> Cohesion is based on visual perception, so there is a blind angle where a fish cannot see neighbors behind itself. Alignment is the result of what lateral lines sense, and since the lines are only present on the sides of a fish' body, the alignment zone has blind angles both in the back and front of the fish.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/blind_angles.png"/>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+
+<h2> Additional Terms </h2>
+    <h3> Cruise Speed </h3>
+    <p> The vectors calculated by aggregating the impact of all the neighboring fish in the three zones described above all have a length. This may cause fish to speed up or slow down, to catch up to the rest of the school or to avoid collisions, respectively. Therefore the model includes a speed force that dampens deviations from the preferred cruise speed. </p>
+
+    <h3> Random </h3>
+    <p> There is a randomly generated force, weighted very lightly, to account for how the decision-making process of an animal is not completely deterministic.</p>
+
+<h2> Weighted Acceleration  </h2>
+    <p> The acceleration vector for an individual fish is the sum of all the forces described above. Seperation is weighted highest, at <code>10</code>, followed by cohesion at <code>9</code> and alignment at <code>5</code>. These values are actually arbitrary except in comparison to each other, since the size of the total vector is rescaled if it exceeds the maximum acceleration value, which we set as <code>0.5</code>.</p>
+
+    <p> Eventually, schools take on an oblong shape with the highest density of fish in the front. This occurs because when a fish slows down due to the seperation force, space appears in front of them that allows the fish in front to move closer due to their cohesion force. At the back of the school, fish are drawn forward towards the average location of its neighbors, but at the front there is little to no such motivation and fish move mainly to avoid collisions.</p>
+
+<h2> Algorithmic Complexity </h2>
+    <p> Having to look at all fish in order to find one fish' neighbors means the flocking algorithm has a complexity of <code>O(n<sup>2</sup>)</code>. The runtime can be reduced to <code>O(n)</code> by keeping track fish in a spatially sorted data structure. Unreal Engine utilizes octrees, and the C++ version of our code takes advantage of that by using Unreal's functionality to find overlapping actors in order to find neighbors. The Processing version of our code currently loops through all fish, but can still handle schools of around 500 fish.</p>
+
+</div>
+<a href="#" class="back-to-top">Back to Top></a>
+<script type="text/javascript" src="../../scripts/screen.js"></script>
+</body>
+</html>
