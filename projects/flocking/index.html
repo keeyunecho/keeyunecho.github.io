@@ -29,7 +29,13 @@
     </ul>
 
 <h2> Overview </h2>
-    <p> Most, if not all, the academic research on flocking/schooling references the Boids model from Craig Reynolds' 1987 paper <a href="https://www.researchgate.net/publication/2797343_Flocks_Herds_and_Schools_A_Distributed_Behavioral_Model?el=1_x_8&enrichId=rgreq-78a280838469d2d19b3405b441e80e5e-XXX&enrichSource=Y292ZXJQYWdlOzIyNDAxMDg3NjtBUzoxMDI4OTY3NjI4ODQxMDBAMTQwMTU0MzkwODM2Ng">[link]</a>. This foundational model determines the next position of each fish is by combing at three steering behaviors: cohesion, alignment, and separation. Cohesion draws a fish to the average location of its neighbors. Alignment rotates the fish' forward direction to the average of that of its neighbors. Lastly, separation causes fish to not swim too close to others.</p>
+    <p> Most, if not all, the academic research on flocking/schooling references the Boids model from Craig Reynolds' 1987 paper <a href="https://www.researchgate.net/publication/2797343_Flocks_Herds_and_Schools_A_Distributed_Behavioral_Model?el=1_x_8&enrichId=rgreq-78a280838469d2d19b3405b441e80e5e-XXX&enrichSource=Y292ZXJQYWdlOzIyNDAxMDg3NjtBUzoxMDI4OTY3NjI4ODQxMDBAMTQwMTU0MzkwODM2Ng">[link]</a>. This foundational model determines the next position of each fish is by combing at three steering behaviors:</p>
+        <ul>
+            <li><strong>Cohesion</strong> draws a fish to the average location of its neighbors.</li>
+            <li><strong>Alignment</strong> rotates the fish' forward direction to the average of that of its neighbors.</li>
+            <li><strong>Separation</strong> causes fish to not swim too close to others.</li>
+        </ul>
+    </p>
 
     <p>The paper we chose to build our project off of was 'Self-organized shapes and frontal density of fish schools' (Hemelrijk and Hildenbrandt, 2007) <a href="https://www.researchgate.net/profile/Charlotte_Hemelrijk/publication/224010876_Self-organized_shapes_and_frontal_density_of_fish_schools/links/00b49523c5ef7e2080000000.pdf">[link]</a>. This paper builds on top of the Boids model, taking into account factors that would effect steering behaviors in real fish schools, like a dynamic radii of perception for cohesion and a preferred "cruise speed" instead of constants like many previous papers used. The conclusion of the paper, as the title suggests, supports the hypothesis that the oblong shape and high frontal density of real schools of fish are a side-effect of each individual's coordination with fish within their neighborhood, just as the model describes.</p>
 
@@ -67,6 +73,25 @@
         <div style="clear:both"></div>
     </div>
 
+<h2> Obstacle Avoidance </h2>
+    <p>Referencing Craig Reynolds’ paper Steering Behaviors for Autonomous Characters, we also implemented obstacle avoidance. While the basic idea is the same as described in this paper, instead of having a rectangular zone of detection in front of each agent, we chose to instead have the obstacle determine this zone.</p>
+
+    <div class="imageWrapper">
+        <div class="images">
+            <img src="images/obstacles.gif"/>
+        </div>
+        <div style="clear:both"></div>
+    </div>
+    <br>
+    <p>Each obstacle has attributes position, radius, and buffer radius. The buffer radius determines how large of a zone around the obstacle our agents should avoid. To calculate this obstacle avoidance force (to be referred to as avoidance from now on), every existing obstacle is looped through to find relevant obstacles (must in the agent’s direct path) and then from those obstacles, determine the closest, and therefore most relevant obstacle.</p>
+
+    <p>To determine whether an obstacle is relevant or not:<br>
+        <ol>
+            <li>Check whether or not the obstacle is in front of the agent by calculating the dot product of the forward vector and the vector toward the obstacle.</li>
+            <li>Check whether this agent is going to be within the buffer zone in the next time step by projecting the vector from the agent to the obstacle onto the agent’s speed vector and checking if the length of this vector is greater than the sum of the radius and the buffer radius.</li>
+        </ol>
+    Once the most relevant obstacle is determined, the avoidance force direction is simply the normal out of the obstacle at the possible point of intersection on the obstacle, if the agent continues on the current trajectory. This can be calculated with a simple line sphere intersection algorithm.</p>
+
 <h2> Additional Terms </h2>
     <h3> Cruise Speed </h3>
     <p> The vectors calculated by aggregating the impact of all the neighboring fish in the three zones described above all have a length. This may cause fish to speed up or slow down, to catch up to the rest of the school or to avoid collisions, respectively. Therefore the model includes a speed force that dampens deviations from the preferred cruise speed. </p>
@@ -79,9 +104,17 @@
 
     <p> Eventually, schools take on an oblong shape with the highest density of fish in the front. This occurs because when a fish slows down due to the seperation force, space appears in front of them that allows the fish in front to move closer due to their cohesion force. At the back of the school, fish are drawn forward towards the average location of its neighbors, but at the front there is little to no such motivation and fish move mainly to avoid collisions.</p>
 
-<h2> Algorithmic Complexity </h2>
-    <p> Having to look at all fish in order to find one fish' neighbors means the flocking algorithm has a complexity of <code>O(n<sup>2</sup>)</code>. The runtime can be reduced to <code>O(n)</code> by keeping track fish in a spatially sorted data structure. Unreal Engine utilizes octrees, and the C++ version of our code takes advantage of that by using Unreal's functionality to find overlapping actors in order to find neighbors. The Processing version of our code currently loops through all fish, but can still handle schools of around 500 fish.</p>
+    <p>Collision avoidance with obstacles is more important than collision avoidance with other agents, so we chose a weight of 20.</p>
 
+<h2> Algorithmic Complexity </h2>
+    <p> Having to look at all fish in order to find one fish' neighbors means the naive flocking algorithm has a complexity of <code>O(n<sup>2</sup>)</code>. The runtime can be reduced to <code>O(n)</code> by keeping track fish in a spatially sorted data structure. Unreal Engine utilizes octrees, and the C++ version of our code takes advantage of that by using Unreal's functionality to find overlapping actors in order to find neighbors. The Processing version of our code currently loops through all fish, but can still handle schools of around 500 fish.</p>
+
+    <p>Additionally, at each time step, each agent must consider every obstacle in existence. That raises the time complexity to O(n²m).
+
+<h2> Future Work </h2>
+    <p>The next step would be to move this simulation into the 3D realm. All the forces work the same way and should only require changes such as adding pitch and roll forces to keep the agents largely horizontal and right side up. Some additional features could include obstacles of different shapes, such as rectangle or lines, and multiple types of agents that flock differently (based on body length, radii, etc.) and do not flock with agents that are not of their same type.</p>
+
+    <p>Ideally, we should implement a spatially sorted data structure in order to handle schools of larger sizes in Processing.</p>
 </div>
 <a href="#" class="back-to-top">Back to Top></a>
 <script type="text/javascript" src="../../scripts/screen.js"></script>
